@@ -53,6 +53,50 @@
     }
   });
 
+  // forward without leaving the page: forms or buttons marked data-async-forward post with fetch
+  const toast = (text, ok) => {
+    let box = document.querySelector('.toasts');
+    if (!box) { box = document.createElement('div'); box.className = 'toasts'; document.body.appendChild(box); }
+    const t = document.createElement('div');
+    t.className = 'toast ' + (ok ? 'ok' : 'err');
+    t.setAttribute('role', ok ? 'status' : 'alert');
+    const span = document.createElement('span'); span.textContent = text;
+    const close = document.createElement('button'); close.setAttribute('aria-label', 'Dismiss'); close.textContent = '×';
+    const hide = () => { t.classList.add('out'); setTimeout(() => t.remove(), 300); };
+    close.addEventListener('click', hide);
+    t.append(span, close); box.appendChild(t);
+    setTimeout(hide, ok ? 4500 : 9000);
+    return t;
+  };
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-async-forward]');
+    if (btn && !btn.closest('form[data-async-forward]')) { e.preventDefault(); sendForward(btn.closest('form'), btn, btn.getAttribute('formaction')); }
+  });
+  document.addEventListener('submit', (e) => {
+    const f = e.target.closest('form[data-async-forward]');
+    if (f) { e.preventDefault(); sendForward(f, f.querySelector('button:not([type=button])'), f.getAttribute('action')); }
+  });
+  async function sendForward(form, btn, url) {
+    if (!window.fetch || !form || btn?.classList.contains('busy')) return;
+    const to = form.querySelector('[name=to]');
+    const body = new URLSearchParams({ csrf: form.querySelector('[name=csrf]').value, to: to ? to.value : '' });
+    btn?.classList.add('busy'); btn?.setAttribute('aria-busy', 'true');
+    const pending = toast('Sending…', true);
+    try {
+      const r = await fetch(url, { method: 'POST', body, credentials: 'same-origin',
+                                   headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' } });
+      const data = await r.json().catch(() => ({}));
+      pending.remove();
+      toast(data.message || (r.ok ? 'Forwarded' : 'Forwarding failed (' + r.status + ')'), r.ok);
+      if (r.ok && to) to.value = '';
+    } catch (err) {
+      pending.remove();
+      toast('Forwarding failed: network error', false);
+    } finally {
+      btn?.classList.remove('busy'); btn?.removeAttribute('aria-busy');
+    }
+  }
+
   // inbox bulk selection
   const bulk = document.querySelector('[data-bulk]');
   if (bulk) {

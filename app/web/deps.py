@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 import zlib
 from email.utils import parseaddr
 
-from .. import auth, config, mailstore
+from .. import auth, config, forwarder, mailstore
 from .icons import icon
 
 BASE = Path(__file__).parent
@@ -124,6 +124,7 @@ def render(request: Request, name: str, status_code: int = 200, **ctx):
     ctx.setdefault("ok", request.query_params.get("ok"))
     ctx.setdefault("err", request.query_params.get("err"))
     ctx.setdefault("domains", ", ".join(config.local_domains()))
+    ctx.setdefault("forward_ok", forwarder.configured())
     ctx.setdefault("unread_count", mailstore.stats()["unread"] if user else 0)
     return templates.TemplateResponse(request, name, ctx, status_code=status_code)
 

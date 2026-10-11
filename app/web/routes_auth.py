@@ -7,7 +7,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, config, db, totp
+from .. import auth, config, db, forwarder, totp
 from .deps import back, current_user, render, session, verify_csrf
 
 router = APIRouter()
@@ -106,14 +106,17 @@ def account(request: Request, user=Depends(current_user)):
 
 @router.post("/account", dependencies=[Depends(verify_csrf)])
 def account_save(name: str = Form(""), current: str = Form(""), new_password: str = Form(""),
-                 default_view: str = Form(""), user=Depends(current_user)):
+                 default_view: str = Form(""), forward_email: str = Form(""), user=Depends(current_user)):
+    forward_email = forward_email.strip()
+    if forward_email and not forwarder.ADDRESS_RE.fullmatch(forward_email):
+        return back("/account", err="Forwarding address is not a valid email address")
     if new_password:
         if not auth.verify_password(user["password_hash"], current):
             return back("/account", err="Current password is wrong")
         if len(new_password) < 8:
             return back("/account", err="Password must be at least 8 characters")
         db.execute("UPDATE users SET password_hash=? WHERE id=?", (auth.hash_password(new_password), user["id"]))
-    db.execute("UPDATE users SET name=? WHERE id=?", (name.strip(), user["id"]))
+    db.execute("UPDATE users SET name=?, forward_email=? WHERE id=?", (name.strip(), forward_email, user["id"]))
     if default_view in ("all", "unread", "flagged"):
         db.execute("UPDATE users SET default_view=? WHERE id=?", (default_view, user["id"]))
     return back("/account", ok="Saved")

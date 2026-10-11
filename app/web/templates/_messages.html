@@ -40,7 +40,11 @@
       <div class="line ellipsis"><b>{{ m.subject or '(no subject)' }}</b>{% if m.snippet %} — {{ m.snippet }}{% endif %}</div>
     </div>
     <span class="rcpt"><span class="badge ellipsis" style="max-width:100%;display:block;line-height:20px">{{ m.rcpt_to }}</span></span>
-    <time>{{ m.received_ts|short }}</time>
+    <span class="when">
+      {% if forward_ok and user.forward_email %}<button type="submit" class="fwd" formaction="/messages/{{ m.id }}/forward" data-async-forward
+              title="Forward to {{ user.forward_email }}" aria-label="Forward to {{ user.forward_email }}">{{ icon('corner-up-right', 15) }}</button>{% endif %}
+      <time>{{ m.received_ts|short }}</time>
+    </span>
   </div>
   {% endfor %}
   {% if pages > 1 %}

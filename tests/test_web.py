@@ -339,3 +339,35 @@ def test_star_toggles_flag_from_the_list(client):
     r = client.post(f"/messages/{mid}/star", data={"csrf": token, "next": "//evil.test"})
     assert r.headers["location"] == "/"                          # off-site target replaced by the inbox
     assert client.post("/messages/99999/star", data={"csrf": token}).status_code == 404
+
+
+def test_forward_uses_profile_address_and_answers_json(client, monkeypatch):
+    from app import config, forwarder
+    token = login(client)
+    mid = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    sent = []
+
+    async def fake_send(msg):
+        sent.append(msg["To"])
+    monkeypatch.setattr(forwarder, "_send", fake_send)
+    config.set_value("FORWARD_SMTP_HOST", "smtp.test")
+    config.set_value("FORWARD_FROM", "trash@example.test")
+
+    # profile address is validated and stored
+    r = client.post("/account", data={"csrf": token, "name": "A", "forward_email": "nope"})
+    assert "err=" in r.headers["location"]
+    r = client.post("/account", data={"csrf": token, "name": "A", "forward_email": " me@x.test "})
+    assert "ok=" in r.headers["location"]
+    assert auth.authenticate("admin", "adminpass1")["forward_email"] == "me@x.test"
+    assert "Forward to me" in client.get(f"/messages/{mid}").text
+
+    fetch = {"X-Requested-With": "fetch"}
+    r = client.post(f"/messages/{mid}/forward", data={"csrf": token}, headers=fetch)   # empty `to`
+    assert r.status_code == 200 and r.json() == {"ok": True, "message": "Forwarded to me@x.test"}
+    r = client.post(f"/messages/{mid}/forward", data={"csrf": token, "to": "other@x.test"}, headers=fetch)
+    assert r.json()["ok"] and sent == ["me@x.test", "other@x.test"]
+
+    # no address anywhere -> JSON error, not a redirect
+    client.post("/account", data={"csrf": token, "name": "A", "forward_email": ""})
+    r = client.post(f"/messages/{mid}/forward", data={"csrf": token}, headers=fetch)
+    assert r.status_code == 422 and r.json()["ok"] is False

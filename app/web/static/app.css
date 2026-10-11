@@ -169,6 +169,12 @@ label.field .hint, .hint { font-weight: 400; color: var(--muted); font-size: 12.
 .msg-row.unread::before { content: ""; position: absolute; left: 5px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--brand); }
 .msg-row .rcpt { justify-self: end; max-width: 100%; }
 .msg-row time { color: var(--muted); font-size: 12.5px; text-align: right; }
+.msg-row .when { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.msg-row .fwd { color: var(--faint); display: grid; place-items: center; opacity: 0; pointer-events: auto; padding: 2px; border-radius: 6px; }
+.msg-row:hover .fwd, .msg-row .fwd:focus-visible, .msg-row .fwd.busy { opacity: 1; }
+.msg-row .fwd:hover { color: var(--brand); }
+.fwd.busy, .btn.busy { opacity: .6; pointer-events: none; }
+@media (hover: none) { .msg-row .fwd { opacity: 1; } }
 /* The whole row is one link: the .stretch anchor covers it, the visible content sits above it
    but lets clicks through, so clicking anywhere on the row (even on text) opens the message.
    Only the checkbox stays interactive. */

@@ -128,6 +128,7 @@ MIGRATIONS = [
     ("users", "totp_last_step", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "totp_recovery", "TEXT NOT NULL DEFAULT '[]'"),
     ("users", "default_view", "TEXT NOT NULL DEFAULT 'all'"),     # inbox start view: all|unread|flagged
+    ("users", "forward_email", "TEXT NOT NULL DEFAULT ''"),       # personal address for one-click forwarding
 ]
 
 

@@ -206,6 +206,9 @@ that are shown once. At sign-in the password is followed by a code (or a recover
   one-condition-one-action rules into `rule_conditions` / `rule_actions` (it is a no-op on new databases).
 * **Per-recipient copies**: a mail to 3 local recipients is stored 3 times, so each copy can be
   flagged/deleted/ruled independently. Simple on purpose.
+* **Personal forwarding address**: users can save one under *Account*; messages then get a one-click
+  "Forward to me" button (message page and inbox rows). Forwards are sent with `fetch` and answered as JSON, so
+  the page doesn't reload (the forms still work without JS).
 * **Forwarding** sends a *new* message from the configured SMTP account with the original attached as
   `original.eml` (keeps your own SPF/DKIM valid). Forwarded mail carries `X-Trashmail-Forwarded: 1`;
   rules never forward such mail again (loop protection).

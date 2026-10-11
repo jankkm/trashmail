@@ -14,6 +14,10 @@
       <button class="btn" name="action" value="{{ 'unflag' if m.flagged else 'flag' }}">{{ icon('star', 16) }} {{ 'Unflag' if m.flagged else 'Flag' }}</button>
       <button class="btn icon" name="action" value="unread" title="Mark as unread" aria-label="Mark as unread">{{ icon('mail', 16) }}</button>
       <a class="btn icon" href="/messages/{{ m.id }}/download" title="Download .eml" aria-label="Download .eml">{{ icon('download', 16) }}</a>
+      {% if forward_ok and user.forward_email %}
+      <button class="btn" formaction="/messages/{{ m.id }}/forward" data-async-forward
+              title="Forward to {{ user.forward_email }}">{{ icon('corner-up-right', 16) }} Forward to me</button>
+      {% endif %}
     </form>
 
     {% if user.is_admin %}
@@ -173,11 +177,11 @@
       <div class="card-header"><span class="ico">{{ icon('corner-up-right', 18) }}</span><h2>Forward</h2></div>
       <div class="card-body">
         {% if forward_ok %}
-        <form method="post" action="/messages/{{ m.id }}/forward" class="stack">
+        <form method="post" action="/messages/{{ m.id }}/forward" class="stack" data-async-forward>
           <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="email" name="to" placeholder="name@example.com" required>
+          <input type="email" name="to" placeholder="{{ user.forward_email or 'name@example.com' }}" {{ '' if user.forward_email else 'required' }}>
           <button class="btn primary">{{ icon('send', 16) }} Forward message</button>
-          <p class="hint">Sent from your configured SMTP account with the original attached as .eml.</p>
+          <p class="hint">Sent from your configured SMTP account with the original attached as .eml.{% if user.forward_email %} Leave empty to send to {{ user.forward_email }}.{% else %} <a class="link" href="/account">Save your address</a> for one-click forwarding.{% endif %}</p>
         </form>
         {% else %}
         <p class="muted">No forwarding SMTP account is configured.{% if user.is_admin %} <a class="link" href="/settings">Set one up</a>.{% endif %}</p>

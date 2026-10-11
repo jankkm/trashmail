@@ -6,7 +6,7 @@ from datetime import datetime
 from urllib.parse import urlencode, quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .. import favorites, forwarder, mailstore, rules
 from .deps import admin_user, back, current_user, render, to_int, verify_csrf
@@ -95,16 +95,26 @@ def attachment(mid: int, idx: int, user=Depends(current_user)):
 
 
 @router.post("/messages/{mid}/forward", dependencies=[Depends(verify_csrf)])
-async def forward(mid: int, to: str = Form(""), user=Depends(current_user)):
+async def forward(request: Request, mid: int, to: str = Form(""), user=Depends(current_user)):
+    """Forward to `to`, or to the address in the user's profile when `to` is empty.
+    With `X-Requested-With: fetch` the answer is JSON so the page can stay where it is."""
     row = _row_or_404(mid)
+    to = to.strip() or (user["forward_email"] or "")
+    wants_json = request.headers.get("x-requested-with") == "fetch"
     try:
+        if not to:
+            raise forwarder.ForwardError("No forwarding address: enter one or add it to your account")
         await forwarder.forward_raw(
             to, mailstore.read_raw(row), subject=row["subject"],
             summary=(f"Forwarded from Trashmail\nOriginal sender: {row['from_header'] or row['mail_from']}\n"
                      f"Received for: {row['rcpt_to']}\nSubject: {row['subject']}\n"))
     except forwarder.ForwardError as exc:
+        if wants_json:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
         return back(f"/messages/{mid}", err=str(exc))
-    return back(f"/messages/{mid}", ok=f"Forwarded to {to.strip()}")
+    if wants_json:
+        return JSONResponse({"ok": True, "message": f"Forwarded to {to}"})
+    return back(f"/messages/{mid}", ok=f"Forwarded to {to}")
 
 
 @router.post("/messages/{mid}/action", dependencies=[Depends(verify_csrf)])
