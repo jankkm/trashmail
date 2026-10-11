@@ -1,66 +1,39 @@
 {% extends "base.html" %}
+{% from "_macros.html" import rule_card with context %}
 {% block title %}Rules · Trashmail{% endblock %}
 {% block content %}
-{% set flabels = {'sender': 'Sender', 'recipient': 'Recipient', 'subject': 'Subject', 'body': 'Body', 'any': 'Any header or body'} %}
-{% set olabels = {'contains': 'contains', 'equals': 'equals', 'startswith': 'starts with', 'endswith': 'ends with', 'regex': 'matches regex'} %}
 <header class="page-header">
-  <div><h1>Rules</h1><p class="sub">Run on every incoming message, lowest priority number first. “Delete” means the mail is never stored.</p></div>
-  <div class="actions"><button class="btn primary" data-open="rule-dialog">{{ icon('plus', 16) }} New rule</button></div>
+  <div><h1>Rules</h1>
+    <p class="sub">Each rule has any number of conditions and one or more actions. Lower priority numbers run first. “Delete” means the mail is never stored.</p></div>
+  <div class="actions"><button class="btn primary" data-rule-new>{{ icon('plus', 16) }} New rule</button></div>
 </header>
 
 <section class="card flush">
   {% if rules %}
-  {% for r in rules %}
-  <div class="rule {{ 'off' if not r.enabled }}">
-    <span class="prio" title="Priority">{{ r.priority }}</span>
-    <div class="rule-body">
-      <div class="rule-text">
-        <span class="muted">If</span>
-        <span class="tok">{% if r.field.startswith('header:') %}Header {{ r.field[7:] }}{% else %}{{ flabels[r.field] }}{% endif %}</span>
-        <span class="muted">{{ olabels[r.op] }}</span>
-        <span class="tok val">{{ r.value }}</span>
-        <span class="muted">→</span>
-        <span class="tok act {{ r.action }}">{{ r.action|capitalize }}{% if r.action == 'forward' %} to {{ r.action_arg }}{% endif %}</span>
-      </div>
-      <div style="margin-top:6px">
-        {% if r.scope %}<span class="badge info">{{ icon('mail', 12) }} {{ r.scope }}</span>
-        {% else %}<span class="badge">{{ icon('globe', 12) }} All recipients</span>{% endif %}
-        {% if not r.enabled %}<span class="badge warn">Disabled</span>{% endif %}
-      </div>
-    </div>
-    <form method="post" action="/rules/{{ r.id }}/toggle" title="{{ 'Disable' if r.enabled else 'Enable' }}">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <label class="switch"><input type="checkbox" {{ 'checked' if r.enabled }} onchange="this.form.submit()" aria-label="Enabled"><i></i></label>
-    </form>
-    <form method="post" action="/rules/{{ r.id }}/delete">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button class="btn ghost icon sm danger" data-confirm="Delete this rule?" title="Delete" aria-label="Delete rule">{{ icon('trash', 16) }}</button>
-    </form>
-  </div>
-  {% endfor %}
+  {% for r in rules %}{{ rule_card(r, csrf, '/rules') }}{% endfor %}
   {% else %}
   <div class="empty">
     <div class="ico">{{ icon('rules', 24) }}</div>
     <h3>No rules yet</h3>
-    <p style="margin-bottom:14px">Automatically flag, forward or drop mail based on sender, subject or content.</p>
-    <button class="btn primary" data-open="rule-dialog">{{ icon('plus', 16) }} Create your first rule</button>
+    <p style="margin-bottom:14px">Automatically flag, forward, mark as read or drop mail based on sender, subject or content.</p>
+    <button class="btn primary" data-rule-new>{{ icon('plus', 16) }} Create your first rule</button>
   </div>
   {% endif %}
 </section>
 
 <section class="card flush">
-  <div class="card-header"><span class="ico">{{ icon('clock', 18) }}</span><div><h2>Recent activity</h2><p>The last 100 times a rule fired.</p></div></div>
+  <div class="card-header"><span class="ico">{{ icon('clock', 18) }}</span><div><h2>Recent activity</h2><p>The last 100 actions that ran.</p></div></div>
   {% if hits %}
   <table>
-    <thead><tr><th style="width:150px">When</th><th style="width:110px">Action</th><th>Message</th><th>Result</th></tr></thead>
+    <thead><tr><th style="width:150px">When</th><th style="width:130px">Action</th><th>Message</th><th>Result</th></tr></thead>
     <tbody>
     {% for h in hits %}
     <tr>
       <td class="muted nowrap">{{ h.at|dt }}</td>
-      <td><span class="badge {{ 'danger' if h.action == 'delete' else 'success' }}">{{ h.action }}</span></td>
+      <td><span class="badge {{ 'danger' if h.action == 'delete' else 'success' }}">{{ labels.ACTION_LABELS.get(h.action, h.action) }}</span></td>
       <td>
         {% if h.message_id %}<a class="link" href="/messages/{{ h.message_id }}">{{ h.subject or '(no subject)' }}</a>{% else %}<b>{{ h.subject or '(no subject)' }}</b>{% endif %}
-        <div class="muted">{{ h.sender }} → {{ h.rcpt }}</div>
+        <div class="muted">{{ h.sender }} → {{ h.rcpt }}{% if h.rule_name %} · {{ h.rule_name }}{% endif %}</div>
       </td>
       <td>{% if h.ok %}<span class="badge success">ok</span>{% else %}<span class="badge danger">failed</span>{% endif %} <span class="muted">{{ h.detail }}</span></td>
     </tr>
@@ -70,38 +43,5 @@
   {% else %}<div class="empty" style="padding:32px"><p>Nothing has matched yet.</p></div>{% endif %}
 </section>
 
-<dialog id="rule-dialog" {{ 'data-autoopen' if prefill.value }}>
-  <form method="post" action="/rules" data-rule-form>
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <div class="dialog-head"><h2>New rule</h2><button type="button" class="btn ghost icon sm" data-close aria-label="Close">{{ icon('x', 16) }}</button></div>
-    <div class="dialog-body">
-      <label class="field">Applies to
-        <input name="scope" list="rcpts" value="{{ prefill.scope }}" placeholder="Leave empty for all recipients">
-        <datalist id="rcpts">{% for r in recipients %}<option value="{{ r.rcpt_to }}">{% endfor %}</datalist>
-        <span class="hint">A specific recipient address, or empty to apply to everything.</span>
-      </label>
-      <div class="grid-2">
-        <label class="field">When
-          <select name="field">{% for f in fields %}<option value="{{ f }}" {{ 'selected' if f == prefill.field }}>{{ flabels[f] if f in flabels else 'Specific header…' }}</option>{% endfor %}</select>
-        </label>
-        <label class="field">Operator
-          <select name="op">{% for o in ops %}<option value="{{ o }}">{{ olabels[o] }}</option>{% endfor %}</select>
-        </label>
-      </div>
-      <div data-header hidden><label class="field">Header name<input name="header_name" placeholder="List-Id"></label></div>
-      <label class="field">Value<input name="value" value="{{ prefill.value }}" placeholder="Text or pattern to match" required></label>
-      <div class="grid-2">
-        <label class="field">Then
-          <select name="action"><option value="flag">Flag</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
-        </label>
-        <label class="field">Priority <input type="number" name="priority" value="100"></label>
-      </div>
-      <div data-forward hidden><label class="field">Forward to<input type="email" name="action_arg" placeholder="name@example.com"></label></div>
-    </div>
-    <div class="dialog-foot">
-      <button type="button" class="btn" data-close>Cancel</button>
-      <button class="btn primary">Create rule</button>
-    </div>
-  </form>
-</dialog>
+{% include "_rule_editor.html" %}
 {% endblock %}

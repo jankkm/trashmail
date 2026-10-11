@@ -8,7 +8,7 @@ from urllib.parse import urlencode, quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
-from .. import forwarder, mailstore, rules
+from .. import favorites, forwarder, mailstore, rules
 from .deps import admin_user, back, current_user, render, verify_csrf
 
 router = APIRouter()
@@ -23,19 +23,23 @@ def _row_or_404(mid: int):
 
 
 @router.get("/", response_class=HTMLResponse)
-def inbox(request: Request, q: str = "", rcpt: str = "", flagged: int = 0, unread: int = 0,
+def inbox(request: Request, q: str = "", rcpt: str = "", fav: int = 0, flagged: int = 0, unread: int = 0,
           page: int = 1, user=Depends(current_user)):
     page = max(page, 1)
+    favs = favorites.list_favorites()
+    selected = next((f for f in favs if f["id"] == fav), None)
     rows, total = mailstore.list_messages(
-        q=q, rcpt=rcpt, flagged=bool(flagged), unread=bool(unread),
-        limit=PER_PAGE, offset=(page - 1) * PER_PAGE)
-    base = {k: v for k, v in {"q": q, "rcpt": rcpt, "flagged": flagged or "", "unread": unread or ""}.items() if v}
+        q=q, rcpt=rcpt, rcpts=selected["addresses"] if selected else None,
+        flagged=bool(flagged), unread=bool(unread), limit=PER_PAGE, offset=(page - 1) * PER_PAGE)
+    base = {k: v for k, v in {"q": q, "rcpt": rcpt, "fav": fav or "", "flagged": flagged or "",
+                              "unread": unread or ""}.items() if v}
     return render(
         request, "inbox.html", nav="inbox", rows=rows, total=total, page=page,
-        pages=max(1, -(-total // PER_PAGE)), q=q, rcpt=rcpt, flagged=bool(flagged), unread=bool(unread),
+        pages=max(1, -(-total // PER_PAGE)), q=q, rcpt=rcpt, fav=selected["id"] if selected else 0,
+        favs=favs, flagged=bool(flagged), unread=bool(unread),
         recipients=mailstore.recipients(), stats=mailstore.stats(), histogram=mailstore.hourly_histogram(),
         base_qs=urlencode(base),
-        qs_search=urlencode({k: v for k, v in {"q": q, "rcpt": rcpt}.items() if v}), now=datetime.now().strftime("%H:%M"),
+        qs_search=urlencode({k: v for k, v in {"q": q, "rcpt": rcpt, "fav": fav or ""}.items() if v}), now=datetime.now().strftime("%H:%M"),
         full_qs=urlencode({**base, "page": page}))
 
 
@@ -45,7 +49,7 @@ def message(request: Request, mid: int, user=Depends(current_user)):
     if not row["is_read"]:
         mailstore.set_read([mid], True)
     view = mailstore.build_view(mailstore.read_raw(row))
-    prefill = urlencode({"scope": row["rcpt_to"], "value": row["mail_from"] or "", "field": "sender"})
+    prefill = ""
     return render(request, "message.html", nav="inbox", m=row, view=view,
                   forward_ok=forwarder.configured(), prefill=prefill,
                   sender_addr=row["mail_from"], sender_domain=row["mail_from"].rpartition("@")[2],

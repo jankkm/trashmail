@@ -1,0 +1,43 @@
+{# Rule card shared by the rules page and the favorite page. Import with context (needs labels, editor_json). #}
+{% macro rule_card(r, csrf, next_url) %}
+<div class="rule {{ 'off' if not r.enabled }}">
+  <span class="prio" title="Priority (lower runs first)">{{ r.priority }}</span>
+  <div class="rule-body">
+    <div class="rule-head">
+      <b>{{ r.name or ('Rule #' ~ r.id) }}</b>
+      {% if r.scope %}<span class="badge info">{{ icon('mail', 12) }} {{ r.scope }}</span>
+      {% else %}<span class="badge">{{ icon('globe', 12) }} All recipients</span>{% endif %}
+      {% if not r.enabled %}<span class="badge warn">Disabled</span>{% endif %}
+    </div>
+    <div class="clause"><span class="lbl">When</span>
+      <div class="rule-text">
+        {% if not r.conditions %}<span class="tok">Every message</span>{% endif %}
+        {% for c in r.conditions %}
+          {% if not loop.first %}<span class="join">{{ 'and' if r.match_mode == 'all' else 'or' }}</span>{% endif %}
+          <span class="tok">{% if c.field.startswith('header:') %}Header {{ c.field[7:] }}{% else %}{{ labels.FIELD_LABELS[c.field] }}{% endif %}</span>
+          <span class="muted">{{ labels.OP_LABELS[c.op] }}</span>
+          <span class="tok val">{{ c.value }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="clause"><span class="lbl">Then</span>
+      <div class="rule-text">
+        {% for a in r.actions %}
+          <span class="tok act {{ a.action }}">{{ labels.ACTION_LABELS[a.action] }}{% if a.action == 'forward' %} {{ a.arg }}{% endif %}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="rule-ctl">
+    <form method="post" action="/rules/{{ r.id }}/toggle" title="{{ 'Disable' if r.enabled else 'Enable' }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="{{ next_url }}">
+      <label class="switch"><input type="checkbox" {{ 'checked' if r.enabled }} onchange="this.form.submit()" aria-label="Enabled"><i></i></label>
+    </form>
+    <button type="button" class="btn ghost icon sm" data-rule-edit='{{ editor_json[r.id]|tojson }}' title="Edit" aria-label="Edit rule">{{ icon('pencil', 15) }}</button>
+    <form method="post" action="/rules/{{ r.id }}/delete">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="{{ next_url }}">
+      <button class="btn ghost icon sm danger" data-confirm="Delete this rule?" title="Delete" aria-label="Delete rule">{{ icon('trash', 15) }}</button>
+    </form>
+  </div>
+</div>
+{% endmacro %}

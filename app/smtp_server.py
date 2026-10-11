@@ -172,36 +172,36 @@ async def deliver(raw: bytes, *, mail_from: str, rcpt: str, ip: str = "", helo: 
 
     already_forwarded = bool(msg.get(forwarder.FORWARD_MARKER))
     matched = rules.matching_rules(ctx)
-    delete = any(r["action"] == "delete" for r in matched)
-    flag = any(r["action"] == "flag" for r in matched)
+    actions = [(rule, act) for rule in matched for act in rule["actions"]]
+    kinds = {act["action"] for _, act in actions}
 
     mid = None
-    if not delete:
-        mid = mailstore.store(raw, mail_from=mail_from, rcpt=rcpt, remote_ip=ip, helo=helo,
-                              auth=auth, flagged=flag)
+    if "delete" not in kinds:
+        mid = mailstore.store(raw, mail_from=mail_from, rcpt=rcpt, remote_ip=ip, helo=helo, auth=auth,
+                              flagged="flag" in kinds, read="mark_read" in kinds)
 
-    for rule in matched:
-        if rule["action"] == "forward":
-            if already_forwarded:
-                rules.log_hit(rule, message_id=mid, ctx=ctx, detail="skipped: loop protection", ok=False)
-                continue
-            limit = config.get_int("FORWARD_LIMIT_PER_HOUR")
-            if limit > 0 and rules.forwards_last_hour() >= limit:
-                log.warning("forward limit of %s/hour reached, not forwarding", limit)
-                rules.log_hit(rule, message_id=mid, ctx=ctx, ok=False,
-                              detail=f"skipped: hourly forward limit ({limit}) reached")
-                continue
-            try:
-                await forwarder.forward_raw(
-                    rule["action_arg"], raw, subject=ctx.subject,
-                    summary=(f"Forwarded from Trashmail\nOriginal sender: {from_header or mail_from}\n"
-                             f"Received for: {rcpt}\nSubject: {ctx.subject}\n"))
-                rules.log_hit(rule, message_id=mid, ctx=ctx, detail=f"forwarded to {rule['action_arg']}")
-            except forwarder.ForwardError as exc:
-                log.warning("rule %s forward failed: %s", rule["id"], exc)
-                rules.log_hit(rule, message_id=mid, ctx=ctx, detail=str(exc), ok=False)
-        else:
-            rules.log_hit(rule, message_id=mid, ctx=ctx, detail="")
+    for rule, act in actions:
+        if act["action"] != "forward":
+            rules.log_hit(rule, act["action"], message_id=mid, ctx=ctx)
+            continue
+        if already_forwarded:
+            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail="skipped: loop protection", ok=False)
+            continue
+        limit = config.get_int("FORWARD_LIMIT_PER_HOUR")
+        if limit > 0 and rules.forwards_last_hour() >= limit:
+            log.warning("forward limit of %s/hour reached, not forwarding", limit)
+            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, ok=False,
+                          detail=f"skipped: hourly forward limit ({limit}) reached")
+            continue
+        try:
+            await forwarder.forward_raw(
+                act["arg"], raw, subject=ctx.subject,
+                summary=(f"Forwarded from Trashmail\nOriginal sender: {from_header or mail_from}\n"
+                         f"Received for: {rcpt}\nSubject: {ctx.subject}\n"))
+            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail=f"forwarded to {act['arg']}")
+        except forwarder.ForwardError as exc:
+            log.warning("rule %s forward failed: %s", rule["id"], exc)
+            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail=str(exc), ok=False)
     return mid
 
 

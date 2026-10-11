@@ -1,0 +1,61 @@
+{# Create/edit rule dialog (driven by static/app.js). Expects: csrf, editor_fields/ops/actions, scope_options, editor_next #}
+<dialog id="rule-editor" class="wide" data-rule-editor>
+  <form method="post" action="/rules">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="next" value="{{ editor_next }}">
+    <div class="dialog-head"><h2 data-title>New rule</h2>
+      <button type="button" class="btn ghost icon sm" data-close aria-label="Close">{{ icon('x', 16) }}</button></div>
+    <div class="dialog-body">
+      <div class="grid-2">
+        <label class="field">Name <span class="hint">optional</span><input name="name" maxlength="80" placeholder="e.g. Invoices"></label>
+        <label class="field">Applies to
+          <input name="scope" list="rule-scopes" placeholder="All recipients">
+          <datalist id="rule-scopes">{% for s in scope_options %}<option value="{{ s }}">{% endfor %}</datalist>
+        </label>
+      </div>
+
+      <section class="clauses">
+        <div class="clauses-head">
+          <b>When</b>
+          <span class="hint" data-cond-hint>No conditions: applies to every message</span>
+          <select name="match_mode" data-match class="auto" hidden>
+            <option value="all">all of these match</option>
+            <option value="any">any of these match</option>
+          </select>
+        </div>
+        <div data-conds class="edit-rows"></div>
+        <button type="button" class="btn sm" data-add-cond>{{ icon('plus', 14) }} Add condition</button>
+      </section>
+
+      <section class="clauses">
+        <div class="clauses-head"><b>Then</b><span class="hint">Runs in this order</span></div>
+        <div data-acts class="edit-rows"></div>
+        <button type="button" class="btn sm" data-add-act>{{ icon('plus', 14) }} Add action</button>
+      </section>
+
+      <label class="field" style="max-width:200px">Priority
+        <input type="number" name="priority" value="100"><span class="hint">Lower numbers run first.</span></label>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button class="btn primary">Save rule</button>
+    </div>
+  </form>
+
+  <template data-tpl-cond>
+    <div class="edit-row cond-row">
+      <select name="cond_field">{% for v, label in editor_fields %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
+      <input name="cond_header" data-header placeholder="Header name" hidden>
+      <select name="cond_op">{% for v, label in editor_ops %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
+      <input name="cond_value" placeholder="Text or pattern" required>
+      <button type="button" class="btn ghost icon sm" data-remove title="Remove" aria-label="Remove condition">{{ icon('x', 15) }}</button>
+    </div>
+  </template>
+  <template data-tpl-act>
+    <div class="edit-row act-row">
+      <select name="act_type">{% for v, label in editor_actions %}<option value="{{ v }}">{{ label }}</option>{% endfor %}</select>
+      <input type="email" name="act_arg" data-arg placeholder="name@example.com" hidden>
+      <button type="button" class="btn ghost icon sm" data-remove title="Remove" aria-label="Remove action">{{ icon('x', 15) }}</button>
+    </div>
+  </template>
+</dialog>

@@ -19,7 +19,8 @@ It **never relays** mail: it only accepts messages for its own domains and store
 | Storage | One `.eml` per message *per recipient* in `DATA_DIR/mail/YYYY/MM/<uuid>.eml`; metadata + FTS5 index in SQLite |
 | Inbox | List, filter by recipient, full-text search (subject/sender/recipient/body), unread/flagged filters, bulk actions, 24 h activity chart |
 | Message view | Sanitised HTML in a sandboxed iframe, **external resources blocked until you click "Load external resources"**, plain text, headers, attachments, download `.eml`, forward, flag, delete |
-| Rules | Global or per recipient address. Match sender / recipient / subject / body / any / specific header with contains, equals, startswith, endswith, regex. Actions: **forward**, **delete**, **flag**. Hit log. |
+| Rules | Per recipient address or global. **Any number of conditions** (sender / recipient / subject / body / any / a specific header; contains, does not contain, equals, starts/ends with, regex), combined with *all* or *any*. **One or more actions** that run in order: **flag**, **mark as read**, **forward**, **delete**. Named, prioritised, editable, with a hit log. |
+| Favorites | A named group of recipient addresses with notes. The favorite's page shows all its emails (search, unread/flagged, bulk actions) and all rules scoped to its addresses, with an inline rule editor. The inbox can be filtered by favorite. |
 | Blacklist | Sender address, sender domain, recipient address, recipient domain. Rejected with `550` during the SMTP dialogue. Domains also match subdomains. |
 | Auth checks | SPF, DKIM, DMARC results shown as badges; optional reject on SPF fail |
 | Retention | Auto-delete after N days (flagged mail is kept) |
@@ -59,22 +60,21 @@ networking or fix the IPv6 proxying).
 
 ## Releasing (GitHub Container Registry)
 
-`.github/workflows/release.yml` runs when you push a tag that starts with `v`:
+`.github/workflows/release.yml` runs when you push a version tag of the form `v*.*.*`:
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0     # or publish a GitHub release, which creates the tag
 ```
 
 1. Runs the test-suite (`pytest`). The image is only published if it passes.
-2. Builds a multi-arch image (`linux/amd64`, `linux/arm64`) and pushes it to
-   `ghcr.io/<owner>/<repo>` with the tags `1.0.0`, `1.0`, `1` (major tag skipped for `v0.x`) and `latest`.
-3. Adds a build-provenance attestation.
+2. Builds a multi-arch image (`linux/amd64`, `linux/arm64`) and pushes it to `ghcr.io/<owner>/<repo>`
+   with exactly two tags: the git tag (`v1.0.0`) and `latest`. There are no commit-hash or branch tags.
 
 No secrets need to be configured: it logs in with the workflow's own `GITHUB_TOKEN`
 (*Settings → Actions → General → Workflow permissions* must allow read/write for packages, or leave the
 default since the workflow requests `packages: write` itself). After the first release, set the package
 visibility in the GitHub *Packages* settings if you want it public. Use it in compose via
-`image: ghcr.io/<owner>/<repo>:1.0.0` (see `docker-compose.example.yml`).
+`image: ghcr.io/<owner>/<repo>:v1.0.0` (see `docker-compose.example.yml`).
 
 ### What can end up in the image
 
@@ -201,15 +201,19 @@ that are shown once. At sign-in the password is followed by a code (or a recover
   retention task are started in the FastAPI lifespan (`app/web/app.py`).
 * **SQLite**: a short-lived connection per call (WAL) in `app/db.py`; there is no ORM. Schema is
   `CREATE TABLE IF NOT EXISTS` in `db.SCHEMA`. That never alters an existing table, so **when you add a
-  column, also append it to `db.MIGRATIONS`** (applied by `db.init()` on every start).
+  column, also append it to `db.MIGRATIONS`** (applied by `db.init()` on every start). Data migrations live next to it: `_migrate_rules_v2` moved the old
+  one-condition-one-action rules into `rule_conditions` / `rule_actions` (it is a no-op on new databases).
 * **Per-recipient copies**: a mail to 3 local recipients is stored 3 times, so each copy can be
   flagged/deleted/ruled independently. Simple on purpose.
 * **Forwarding** sends a *new* message from the configured SMTP account with the original attached as
   `original.eml` (keeps your own SPF/DKIM valid). Forwarded mail carries `X-Trashmail-Forwarded: 1`;
   rules never forward such mail again (loop protection).
-* **Rule semantics**: all enabled matching rules apply, ordered by `priority`. `delete` wins over
-  `flag` (mail is not stored at all, but forward rules still run and every hit is logged). `equals`
-  on sender/recipient also matches a bare address inside `Name <addr>`.
+* **Rule semantics**: a rule belongs to one recipient address (or all) and has 0..n conditions joined by
+  AND (`match_mode=all`) or OR (`any`); no conditions = matches every message in scope. All enabled matching
+  rules apply, ordered by `priority`, and each runs all of its actions in order. Actions combine across rules:
+  `delete` wins (the mail is never stored, but forward actions still run and every action is logged),
+  `flag` / `mark_read` set the stored message's state. `equals` on sender/recipient also matches a bare
+  address inside `Name <addr>`. Tables: `rules`, `rule_conditions`, `rule_actions`, `rule_hits`.
 * **HTML mail safety**: `nh3` sanitises HTML; it is served from `/messages/{id}/body` inside an
   `<iframe sandbox>` with a strict CSP (`default-src 'none'; img-src data:`). `cid:` images are inlined
   as data URIs. The *Load external resources* button just reloads the iframe with `?external=1`, which
@@ -232,7 +236,8 @@ app/
   auth.py            users, argon2, session signing, bootstrap admin
   smtp_server.py     aiosmtpd handler + deliver() pipeline (rules → store → forward)
   mailstore.py       .eml write, indexing, search, listing, HTML sanitising, retention
-  rules.py           rule matching, validation, blacklist + local-domain policy
+  rules.py           rules (conditions/actions CRUD + matching), blacklist, local-domain policy
+  favorites.py       favorites (named address groups with notes) + their counts
   forwarder.py       outbound SMTP (aiosmtplib) using effective settings
   security_checks.py SPF / DKIM / DMARC
   main.py            uvicorn entry point
@@ -241,6 +246,8 @@ app/
     deps.py          templates, filters, session/current_user/admin_user/verify_csrf, render(), back()
     routes_auth.py   /login /logout /account
     routes_mail.py   / (inbox) /messages/*
+    routes_favorites.py /favorites, /favorites/{id}
+    ruleui.py        rule-editor form parsing/context shared by rules + favorite pages
     routes_admin.py  /rules /blacklist /users /settings
     templates/       Jinja2 pages (server-rendered, almost no JS)
     icons.py         inline SVG icon set (`icon()` template global)
@@ -270,8 +277,10 @@ automatic dark mode.
 * **JS**: only `app/web/static/app.js` (dialogs, confirm prompts, bulk selection, toasts, settings save
   bar). No build step, no framework. Destructive buttons use `data-confirm="..."`; dialogs use
   `data-open="id"` / `data-close`.
-* **Pages**: inbox (stats, 24 h chart, search, filters, bulk actions), message (sandboxed body, auth
-  badges, details, attachments, forward, Block/Rule menus), rules (sentence-style list + dialog),
+* **Pages**: inbox (stats, 24 h chart, search, filters incl. favorite, bulk actions), message (sandboxed
+  body, auth badges, details, attachments, forward, Block/Rule menus), favorites (cards) and a favorite
+  page (emails + notes + rules side by side), rules (sentence-style cards + a dialog editor with dynamic
+  condition/action rows, `static/app.js`),
   blacklist, users (table + dialogs), settings (grouped rows with source badges and a sticky save bar).
 * UI language is English (strings live in the templates; there is no i18n layer yet).
 

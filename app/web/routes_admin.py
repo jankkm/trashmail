@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from .. import auth, config, db, forwarder, mailstore, rules
+from . import ruleui
 from .deps import admin_user, back, current_user, render, verify_csrf
 
 router = APIRouter()
@@ -15,44 +16,52 @@ CSRF = [Depends(verify_csrf)]
 
 # --- rules ----------------------------------------------------------------- #
 @router.get("/rules", response_class=HTMLResponse)
-def rules_page(request: Request, scope: str = "", field: str = "sender", value: str = "",
-               user=Depends(current_user)):
-    rows = db.query("SELECT * FROM rules ORDER BY priority, id")
-    hits = db.query("SELECT h.*, r.id AS rid FROM rule_hits h LEFT JOIN rules r ON r.id=h.rule_id "
+def rules_page(request: Request, user=Depends(current_user)):
+    rows = rules.list_rules()
+    hits = db.query("SELECT h.*, r.name AS rule_name FROM rule_hits h LEFT JOIN rules r ON r.id=h.rule_id "
                     "ORDER BY h.id DESC LIMIT 100")
-    return render(request, "rules.html", nav="rules", rules=rows, hits=hits, describe=rules.describe,
-                  recipients=mailstore.recipients(), fields=rules.FIELDS, ops=rules.OPS, actions=rules.ACTIONS,
-                  prefill={"scope": scope, "field": field, "value": value})
+    recipients = [r["rcpt_to"] for r in mailstore.recipients()]
+    return render(request, "rules.html", nav="rules", rules=rows, hits=hits, labels=rules,
+                  editor_json={r["id"]: rules.rule_for_editor(r) for r in rows},
+                  **ruleui.editor_context(recipients, "/rules"))
 
 
 @router.post("/rules", dependencies=CSRF)
-def rules_add(scope: str = Form(""), field: str = Form("sender"), header_name: str = Form(""),
-              op: str = Form("contains"), value: str = Form(""), action: str = Form("flag"),
-              action_arg: str = Form(""), priority: int = Form(100), next: str = Form(""),
-              user=Depends(current_user)):
-    target = next if next.startswith("/") and not next.startswith("//") else "/rules"
+async def rules_add(request: Request, user=Depends(current_user)):
+    data = ruleui.parse_rule_form(await request.form())
+    target = ruleui.safe_next(data["next"], "/rules")
     try:
-        stored_field = rules.validate_rule(field, header_name, op, value, action, action_arg)
+        rules.create_rule(conditions=data["conditions"], actions=data["actions"], scope=data["scope"],
+                          name=data["name"], match_mode=data["match_mode"], priority=data["priority"])
     except rules.RuleError as exc:
         return back(target, err=str(exc))
-    db.execute(
-        "INSERT INTO rules(scope, field, op, value, action, action_arg, priority, created_at)"
-        " VALUES(?,?,?,?,?,?,?,?)",
-        (scope.strip().lower() or None, stored_field, op, value.strip(), action,
-         action_arg.strip() if action == "forward" else "", priority, int(time.time())))
     return back(target, ok="Rule added")
 
 
+@router.post("/rules/{rid}/update", dependencies=CSRF)
+async def rules_update(rid: int, request: Request, user=Depends(current_user)):
+    data = ruleui.parse_rule_form(await request.form())
+    target = ruleui.safe_next(data["next"], "/rules")
+    if rules.get_rule(rid) is None:
+        return back(target, err="Rule not found")
+    try:
+        rules.update_rule(rid, conditions=data["conditions"], actions=data["actions"], scope=data["scope"],
+                          name=data["name"], match_mode=data["match_mode"], priority=data["priority"])
+    except rules.RuleError as exc:
+        return back(target, err=str(exc))
+    return back(target, ok="Rule saved")
+
+
 @router.post("/rules/{rid}/toggle", dependencies=CSRF)
-def rules_toggle(rid: int, user=Depends(current_user)):
+def rules_toggle(rid: int, next: str = Form(""), user=Depends(current_user)):
     db.execute("UPDATE rules SET enabled = 1 - enabled WHERE id=?", (rid,))
-    return back("/rules")
+    return back(ruleui.safe_next(next, "/rules"))
 
 
 @router.post("/rules/{rid}/delete", dependencies=CSRF)
-def rules_delete(rid: int, user=Depends(current_user)):
-    db.execute("DELETE FROM rules WHERE id=?", (rid,))
-    return back("/rules", ok="Rule deleted")
+def rules_delete(rid: int, next: str = Form(""), user=Depends(current_user)):
+    rules.delete_rule(rid)
+    return back(ruleui.safe_next(next, "/rules"), ok="Rule deleted")
 
 
 # --- blacklist ------------------------------------------------------------- #

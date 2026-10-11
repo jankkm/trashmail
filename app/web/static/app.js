@@ -55,14 +55,103 @@
     sform.addEventListener('change', () => { bar.hidden = false; });
   }
 
-  // rule dialog: header-name + forward address only when relevant
+  // quick-rule form (message page): forward address only when relevant
   $$('form[data-rule-form]').forEach((f) => {
-    const field = f.querySelector('[name=field]'), header = f.querySelector('[data-header]');
-    const action = f.querySelector('[name=action]'), arg = f.querySelector('[data-forward]');
+    const action = f.querySelector('[name=act_type]'), arg = f.querySelector('[data-forward]');
     const sync = () => {
-      if (header) header.hidden = field.value !== 'header';
-      if (arg) { arg.hidden = action.value !== 'forward'; arg.querySelector('input').required = action.value === 'forward'; }
+      if (!arg) return;
+      arg.hidden = action.value !== 'forward';
+      arg.querySelector('input').required = action.value === 'forward';
     };
-    field?.addEventListener('change', sync); action?.addEventListener('change', sync); sync();
+    action?.addEventListener('change', sync); sync();
   });
+
+  // favorites: click a suggested address to add it to the textarea
+  document.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-add-address]');
+    if (!chip) return;
+    const box = chip.closest('form').querySelector('[data-addresses]');
+    const have = box.value.split(/[\s,;]+/).filter(Boolean);
+    if (!have.includes(chip.dataset.addAddress)) box.value = (box.value.trim() ? box.value.trim() + '\n' : '') + chip.dataset.addAddress;
+    chip.classList.add('used');
+  });
+
+  // rule editor dialog: any number of conditions, one or more actions
+  const editor = document.querySelector('[data-rule-editor]');
+  if (editor) {
+    const form = editor.querySelector('form');
+    const conds = editor.querySelector('[data-conds]'), acts = editor.querySelector('[data-acts]');
+    const tplCond = editor.querySelector('template[data-tpl-cond]'), tplAct = editor.querySelector('template[data-tpl-act]');
+    const match = editor.querySelector('[data-match]'), hint = editor.querySelector('[data-cond-hint]');
+    const sync = () => {
+      const n = conds.children.length;
+      match.hidden = n < 2;
+      hint.hidden = n > 0;
+      $$('.cond-row', conds).forEach((row) => {
+        row.querySelector('[data-header]').hidden = row.querySelector('[name=cond_field]').value !== 'header';
+        row.querySelector('[data-header]').required = !row.querySelector('[data-header]').hidden;
+      });
+      $$('.act-row', acts).forEach((row) => {
+        const arg = row.querySelector('[data-arg]');
+        arg.hidden = row.querySelector('[name=act_type]').value !== 'forward';
+        arg.required = !arg.hidden;
+      });
+      $$('[data-remove]', acts).forEach((b) => { b.hidden = acts.children.length < 2; });   // keep >= 1 action
+    };
+    const addCond = (c = {}) => {
+      const row = tplCond.content.firstElementChild.cloneNode(true);
+      row.querySelector('[name=cond_field]').value = c.field || 'sender';
+      row.querySelector('[name=cond_header]').value = c.header || '';
+      row.querySelector('[name=cond_op]').value = c.op || 'contains';
+      row.querySelector('[name=cond_value]').value = c.value || '';
+      conds.append(row); sync(); return row;
+    };
+    const addAct = (a = {}) => {
+      const row = tplAct.content.firstElementChild.cloneNode(true);
+      row.querySelector('[name=act_type]').value = a.action || 'flag';
+      row.querySelector('[name=act_arg]').value = a.arg || '';
+      acts.append(row); sync(); return row;
+    };
+    const reset = () => {
+      conds.replaceChildren(); acts.replaceChildren();
+      form.querySelector('[name=name]').value = '';
+      form.querySelector('[name=scope]').value = '';
+      form.querySelector('[name=priority]').value = '100';
+      match.value = 'all';
+    };
+    editor.addEventListener('click', (e) => {
+      if (e.target.closest('[data-add-cond]')) addCond({ field: 'sender' }).querySelector('[name=cond_value]').focus();
+      else if (e.target.closest('[data-add-act]')) addAct();
+      else {
+        const rm = e.target.closest('[data-remove]');
+        const row = rm && rm.closest('.edit-row');
+        if (row && !(row.classList.contains('act-row') && acts.children.length < 2)) { row.remove(); sync(); }   // keep >= 1 action
+      }
+    });
+    editor.addEventListener('change', sync);
+    document.addEventListener('click', (e) => {
+      const fresh = e.target.closest('[data-rule-new]');
+      const edit = e.target.closest('[data-rule-edit]');
+      if (!fresh && !edit) return;
+      reset();
+      if (fresh) {
+        editor.querySelector('[data-title]').textContent = 'New rule';
+        form.action = '/rules';
+        form.querySelector('[name=scope]').value = fresh.dataset.scope || '';
+        addAct({ action: 'flag' });
+      } else {
+        const rule = JSON.parse(edit.dataset.ruleEdit);
+        editor.querySelector('[data-title]').textContent = 'Edit rule';
+        form.action = `/rules/${rule.id}/update`;
+        form.querySelector('[name=name]').value = rule.name;
+        form.querySelector('[name=scope]').value = rule.scope;
+        form.querySelector('[name=priority]').value = rule.priority;
+        match.value = rule.match_mode;
+        rule.conditions.forEach(addCond);
+        (rule.actions.length ? rule.actions : [{ action: 'flag' }]).forEach(addAct);
+      }
+      sync();
+      editor.showModal();
+    });
+  }
 })();

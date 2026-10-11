@@ -40,7 +40,6 @@
         <form method="post" action="/rules" class="stack" data-rule-form>
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="next" value="/messages/{{ m.id }}">
-          <input type="hidden" name="priority" value="100">
           <label class="field">Applies to
             <select name="scope">
               <option value="{{ m.rcpt_to }}" selected>Only mail to {{ m.rcpt_to }}</option>
@@ -49,7 +48,7 @@
           </label>
           <div class="grid-2">
             <label class="field">When
-              <select name="field" id="qr-field">
+              <select name="cond_field" id="qr-field">
                 <option value="sender" data-v="{{ m.mail_from }}" selected>Sender</option>
                 <option value="subject" data-v="{{ m.subject }}">Subject</option>
                 <option value="body" data-v="">Body</option>
@@ -57,16 +56,16 @@
               </select>
             </label>
             <label class="field">Operator
-              <select name="op"><option value="contains">contains</option><option value="equals">equals</option><option value="startswith">starts with</option><option value="endswith">ends with</option><option value="regex">matches regex</option></select>
+              <select name="cond_op"><option value="contains">contains</option><option value="not_contains">does not contain</option><option value="equals">equals</option><option value="startswith">starts with</option><option value="endswith">ends with</option><option value="regex">matches regex</option></select>
             </label>
           </div>
-          <input name="value" id="qr-value" value="{{ m.mail_from }}" placeholder="Text to match" required>
+          <input name="cond_value" id="qr-value" value="{{ m.mail_from }}" placeholder="Text to match" required>
           <label class="field">Then
-            <select name="action"><option value="flag">Flag</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
+            <select name="act_type"><option value="flag">Flag</option><option value="mark_read">Mark as read</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
           </label>
-          <div data-forward hidden><input type="email" name="action_arg" placeholder="Forward to address"></div>
+          <div data-forward hidden><input type="email" name="act_arg" placeholder="Forward to address"></div>
           <button class="btn primary">Add rule</button>
-          <a class="link" href="/rules" style="text-align:center">Manage all rules</a>
+          <a class="link" href="/rules" style="text-align:center">Create rules with several conditions or actions</a>
         </form>
       </div>
     </details>

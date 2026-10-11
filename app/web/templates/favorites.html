@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Favorites · Trashmail{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Favorites</h1><p class="sub">Group recipient addresses that belong together and see their mail and rules in one place.</p></div>
+  <div class="actions"><button class="btn primary" data-open="fav-new">{{ icon('plus', 16) }} New favorite</button></div>
+</header>
+
+{% if favs %}
+<div class="fav-grid">
+  {% for f in favs %}
+  <a class="card fav-card" href="/favorites/{{ f.id }}">
+    <div class="fav-top">
+      <span class="fav-icon">{{ icon('star', 18) }}</span>
+      <b class="ellipsis">{{ f.name }}</b>
+      {% if f.unread %}<span class="badge success" style="margin-left:auto">{{ f.unread }} new</span>{% endif %}
+    </div>
+    <div class="chips">
+      {% for a in f.addresses[:3] %}<span class="badge info ellipsis" style="max-width:100%">{{ a }}</span>{% endfor %}
+      {% if f.addresses|length > 3 %}<span class="badge">+{{ f.addresses|length - 3 }} more</span>{% endif %}
+    </div>
+    {% if f.notes %}<p class="fav-notes">{{ f.notes }}</p>{% endif %}
+    <div class="fav-stats">
+      <span>{{ icon('mail', 14) }} <b>{{ f.messages }}</b> email{{ '' if f.messages == 1 else 's' }}</span>
+      <span>{{ icon('rules', 14) }} <b>{{ f.rules }}</b> rule{{ '' if f.rules == 1 else 's' }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<section class="card"><div class="empty">
+  <div class="ico">{{ icon('star', 24) }}</div>
+  <h3>No favorites yet</h3>
+  <p style="margin-bottom:14px">A favorite is a named set of recipient addresses, for example everything you use for one service or project.</p>
+  <button class="btn primary" data-open="fav-new">{{ icon('plus', 16) }} Create your first favorite</button>
+</div></section>
+{% endif %}
+
+<dialog id="fav-new">
+  <form method="post" action="/favorites">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="dialog-head"><h2>New favorite</h2><button type="button" class="btn ghost icon sm" data-close aria-label="Close">{{ icon('x', 16) }}</button></div>
+    <div class="dialog-body">
+      <label class="field">Name<input name="name" required maxlength="80" placeholder="e.g. Shopping"></label>
+      <label class="field">Recipient addresses
+        <textarea name="addresses" rows="4" required placeholder="one per line, or separated by commas" data-addresses></textarea>
+        <span class="hint">All mail sent to these addresses appears on the favorite's page.</span>
+      </label>
+      {% if suggestions %}
+      <div>
+        <div class="hint" style="margin-bottom:6px">Recent recipients, click to add:</div>
+        <div class="chips">{% for a in suggestions %}<button type="button" class="chip-btn" data-add-address="{{ a }}">{{ a }}</button>{% endfor %}</div>
+      </div>
+      {% endif %}
+      <label class="field">Notes <span class="hint">optional</span><textarea name="notes" rows="3" placeholder="What is this for?"></textarea></label>
+    </div>
+    <div class="dialog-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Create favorite</button></div>
+  </form>
+</dialog>
+{% endblock %}

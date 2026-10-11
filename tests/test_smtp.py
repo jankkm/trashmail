@@ -48,8 +48,10 @@ def test_blacklists_reject(server):
 
 
 def test_rule_delete_and_flag(server):
-    db.execute("INSERT INTO rules(scope,field,op,value,action,created_at) VALUES(NULL,'subject','contains','invoice','flag',0)")
-    db.execute("INSERT INTO rules(scope,field,op,value,action,created_at) VALUES('bob@example.test','sender','contains','junk.test','delete',0)")
+    rules.create_rule(conditions=[{"field": "subject", "op": "contains", "value": "invoice"}],
+                      actions=[{"action": "flag"}])
+    rules.create_rule(conditions=[{"field": "sender", "op": "contains", "value": "junk.test"}],
+                      actions=[{"action": "delete"}], scope="bob@example.test")
     send(server, "alice@sender.test", "bob@example.test")
     rows, _ = mailstore.list_messages()
     assert rows[0]["flagged"] == 1
@@ -147,8 +149,8 @@ async def test_forward_cap_per_hour():
     import time
     from app import rules
     config.set_value("FORWARD_LIMIT_PER_HOUR", "2")
-    rid = db.execute("INSERT INTO rules(scope,field,op,value,action,action_arg,created_at)"
-                     " VALUES(NULL,'subject','contains','invoice','forward','me@x.test',0)")
+    rid = rules.create_rule(conditions=[{"field": "subject", "op": "contains", "value": "invoice"}],
+                            actions=[{"action": "forward", "arg": "me@x.test"}])
     for _ in range(2):
         db.execute("INSERT INTO rule_hits(at,rule_id,action,ok) VALUES(?,?,?,1)", (int(time.time()), rid, "forward"))
     assert rules.forwards_last_hour() == 2
@@ -156,3 +158,15 @@ async def test_forward_cap_per_hour():
     assert mid is not None                                  # mail is still stored
     hit = db.one("SELECT * FROM rule_hits ORDER BY id DESC LIMIT 1")
     assert hit["ok"] == 0 and "limit" in hit["detail"]
+
+
+async def test_one_rule_runs_several_actions_in_one_delivery():
+    rules.create_rule(
+        conditions=[{"field": "subject", "op": "contains", "value": "invoice"},
+                    {"field": "sender", "op": "contains", "value": "sender.test"}],
+        actions=[{"action": "flag"}, {"action": "mark_read"}], name="Invoices")
+    rules.create_rule(conditions=[], actions=[{"action": "flag"}], scope="someone-else@example.test")
+    mid = await smtp_server.deliver(SAMPLE, mail_from="alice@sender.test", rcpt="bob@example.test")
+    row = mailstore.get(mid)
+    assert row["flagged"] == 1 and row["is_read"] == 1
+    assert [h["action"] for h in db.query("SELECT action FROM rule_hits ORDER BY id")] == ["flag", "mark_read"]

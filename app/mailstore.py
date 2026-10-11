@@ -154,7 +154,7 @@ def _clean_token(value: str) -> str:
 
 
 def store(raw: bytes, *, mail_from: str, rcpt: str, remote_ip: str = "", helo: str = "",
-          auth: AuthResult | None = None, flagged: bool = False) -> int:
+          auth: AuthResult | None = None, flagged: bool = False, read: bool = False) -> int:
     """Write one copy of the message for one recipient. Returns the message id."""
     auth = auth or AuthResult()
     now = time.time()
@@ -184,10 +184,10 @@ def store(raw: bytes, *, mail_from: str, rcpt: str, remote_ip: str = "", helo: s
     with db.tx() as conn:
         cur = conn.execute(
             "INSERT INTO messages(uid, path, received_ts, mail_from, rcpt_to, from_header, subject, snippet,"
-            " size, has_html, attachments, flagged, remote_ip, spf, dkim, dmarc)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " size, has_html, attachments, flagged, is_read, remote_ip, spf, dkim, dmarc)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (uid, rel, int(now), mail_from, rcpt.lower(), from_header, subject, snippet, len(full),
-             1 if html else 0, len(attachment_parts(msg)), 1 if flagged else 0, remote_ip,
+             1 if html else 0, len(attachment_parts(msg)), 1 if flagged else 0, 1 if read else 0, remote_ip,
              auth.spf, auth.dkim, auth.dmarc),
         )
         mid = cur.lastrowid
@@ -215,8 +215,8 @@ def _fts_query(q: str) -> str:
     return " ".join('"' + t.replace('"', '""') + '"*' for t in tokens)
 
 
-def list_messages(*, q: str = "", rcpt: str = "", flagged: bool = False, unread: bool = False,
-                  limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
+def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None, flagged: bool = False,
+                  unread: bool = False, limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
     where, args = [], []
     if q.strip():
         fts = _fts_query(q)
@@ -227,6 +227,11 @@ def list_messages(*, q: str = "", rcpt: str = "", flagged: bool = False, unread:
     if rcpt:
         where.append("m.rcpt_to = ?")
         args.append(rcpt.lower())
+    if rcpts is not None:               # e.g. all addresses of a favorite; empty list = nothing
+        if not rcpts:
+            return [], 0
+        where.append(f"m.rcpt_to IN ({','.join('?' * len(rcpts))})")
+        args.extend(a.lower() for a in rcpts)
     if flagged:
         where.append("m.flagged = 1")
     if unread:

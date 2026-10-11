@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_macros.html" import rule_card with context %}
+{% block title %}{{ fav.name }} · Favorites · Trashmail{% endblock %}
+{% block content %}
+<a class="back" href="/favorites">{{ icon('arrow-left', 16) }} Favorites</a>
+
+<header class="page-header">
+  <div class="grow">
+    <h1 class="row" style="gap:10px"><span class="fav-icon lg">{{ icon('star', 20) }}</span>{{ fav.name }}</h1>
+    <div class="chips" style="margin-top:10px">
+      {% for a in fav.addresses %}<a class="badge info" href="/?rcpt={{ a|urlencode }}" title="Show in inbox">{{ a }}</a>{% endfor %}
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn" data-open="fav-edit">{{ icon('pencil', 16) }} Edit</button>
+    <form method="post" action="/favorites/{{ fav.id }}/delete">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn danger" data-confirm="Delete the favorite “{{ fav.name }}”? Emails and rules are not affected.">{{ icon('trash', 16) }} Delete</button>
+    </form>
+  </div>
+</header>
+
+<section class="card overview" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="stat"><div class="label">{{ icon('mail', 15) }} Emails</div><div class="num">{{ counts.messages }}</div></div>
+  <div class="stat"><div class="label">{{ icon('eye', 15) }} Unread</div><div class="num">{{ counts.unread }}</div></div>
+  <div class="stat"><div class="label">{{ icon('rules', 15) }} Rules</div><div class="num">{{ scoped_rules|length }}</div></div>
+  <div class="stat"><div class="label">{{ icon('at', 15) }} Addresses</div><div class="num">{{ fav.addresses|length }}</div></div>
+</section>
+
+<div class="split fav-split">
+  <div>
+    <div class="section-title"><h2>Emails</h2></div>
+    <form class="toolbar" method="get" action="/favorites/{{ fav.id }}">
+      <div class="input-icon">{{ icon('search', 16) }}<input type="search" name="q" value="{{ q }}" placeholder="Search these emails…"></div>
+      <div class="segmented">
+        <a href="/favorites/{{ fav.id }}{{ '?q=' ~ (q|urlencode) if q }}" class="{{ 'on' if not unread and not flagged }}">All</a>
+        <a href="/favorites/{{ fav.id }}?unread=1{{ '&q=' ~ (q|urlencode) if q }}" class="{{ 'on' if unread }}">Unread</a>
+        <a href="/favorites/{{ fav.id }}?flagged=1{{ '&q=' ~ (q|urlencode) if q }}" class="{{ 'on' if flagged }}">Flagged</a>
+      </div>
+      {% if unread %}<input type="hidden" name="unread" value="1">{% endif %}
+      {% if flagged %}<input type="hidden" name="flagged" value="1">{% endif %}
+    </form>
+    {% set empty_title = 'No emails found' if (q or unread or flagged) else 'No emails yet' %}
+    {% set empty_text = 'Nothing matches your filters.' if (q or unread or flagged) else 'Mail sent to any of this favorite’s addresses will show up here.' %}
+    {% include "_messages.html" %}
+  </div>
+
+  <aside>
+    {% if fav.notes %}
+    <section class="card" style="margin-top:0">
+      <div class="card-header"><span class="ico">{{ icon('pencil', 18) }}</span><h2>Notes</h2></div>
+      <div class="card-body notes">{{ fav.notes }}</div>
+    </section>
+    {% endif %}
+
+    <div class="section-title" style="margin-top:{{ '20px' if fav.notes else '0' }}">
+      <h2>Rules <span class="muted" style="font-weight:500">({{ scoped_rules|length }})</span></h2>
+      <button class="btn sm" data-rule-new data-scope="{{ fav.addresses[0] }}">{{ icon('plus', 14) }} Add rule</button>
+    </div>
+    <section class="card flush" style="margin-top:0">
+      {% for r in scoped_rules %}{{ rule_card(r, csrf, next_url) }}
+      {% else %}
+      <div class="empty" style="padding:28px 20px"><p>No rules for these addresses yet.</p></div>
+      {% endfor %}
+    </section>
+
+    {% if global_rules %}
+    <details class="card flush global-rules">
+      <summary>{{ icon('globe', 15) }} {{ global_rules|length }} global rule{{ '' if global_rules|length == 1 else 's' }} also apply</summary>
+      {% for r in global_rules %}{{ rule_card(r, csrf, next_url) }}{% endfor %}
+    </details>
+    {% endif %}
+  </aside>
+</div>
+
+<dialog id="fav-edit">
+  <form method="post" action="/favorites/{{ fav.id }}/update">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="dialog-head"><h2>Edit favorite</h2><button type="button" class="btn ghost icon sm" data-close aria-label="Close">{{ icon('x', 16) }}</button></div>
+    <div class="dialog-body">
+      <label class="field">Name<input name="name" required maxlength="80" value="{{ fav.name }}"></label>
+      <label class="field">Recipient addresses
+        <textarea name="addresses" rows="5" required data-addresses>{{ fav.addresses|join('\n') }}</textarea>
+        <span class="hint">One per line, or separated by commas.</span></label>
+      <label class="field">Notes <span class="hint">optional</span><textarea name="notes" rows="4">{{ fav.notes }}</textarea></label>
+    </div>
+    <div class="dialog-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save changes</button></div>
+  </form>
+</dialog>
+
+{% include "_rule_editor.html" %}
+{% endblock %}

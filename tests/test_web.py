@@ -91,16 +91,80 @@ def test_settings_roundtrip_and_secret_not_rendered(client):
 
 
 def test_rules_and_blacklist_pages(client):
+    from app import rules
     token = login(client)
-    r = client.post("/rules", data={"csrf": token, "scope": "bob@example.test", "field": "subject",
-                                    "op": "contains", "value": "invoice", "action": "flag"})
+    # two conditions + two actions in one rule, via the editor's repeated form fields
+    r = client.post("/rules", data={
+        "csrf": token, "name": "Invoices", "scope": "bob@example.test", "match_mode": "any", "priority": "10",
+        "cond_field": ["subject", "sender"], "cond_header": ["", ""], "cond_op": ["contains", "endswith"],
+        "cond_value": ["invoice", "@shop.test"], "act_type": ["flag", "mark_read"], "act_arg": ["", ""]})
     assert "ok=" in r.headers["location"]
-    r = client.post("/rules", data={"csrf": token, "field": "subject", "op": "regex", "value": "([",
-                                    "action": "flag"})
-    assert "err=" in r.headers["location"]
-    assert "invoice" in client.get("/rules").text
+    rule = rules.list_rules()[0]
+    assert rule["name"] == "Invoices" and rule["match_mode"] == "any"
+    assert [c["value"] for c in rule["conditions"]] == ["invoice", "@shop.test"]
+    assert [a["action"] for a in rule["actions"]] == ["flag", "mark_read"]
+    page = client.get("/rules").text
+    assert "Invoices" in page and "invoice" in page and "bob@example.test" in page
+    assert 'data-rule-edit=' in page
+
+    # editing replaces conditions and actions
+    r = client.post(f"/rules/{rule['id']}/update", data={
+        "csrf": token, "name": "Only flag", "scope": "", "match_mode": "all", "priority": "50",
+        "cond_field": ["subject"], "cond_header": [""], "cond_op": ["not_contains"], "cond_value": ["spam"],
+        "act_type": ["delete"], "act_arg": [""]})
+    assert "ok=" in r.headers["location"]
+    edited = rules.get_rule(rule["id"])
+    assert edited["scope"] is None and edited["conditions"][0]["op"] == "not_contains"
+    assert [a["action"] for a in edited["actions"]] == ["delete"]
+
+    # no action / invalid regex are rejected with a message
+    for bad in ({"act_type": []}, {"cond_field": ["subject"], "cond_op": ["regex"], "cond_value": ["(["],
+                                   "act_type": ["flag"]}):
+        r = client.post("/rules", data={"csrf": token, **bad})
+        assert "err=" in r.headers["location"]
+    assert len(rules.list_rules()) == 1
+
     client.post("/blacklist", data={"csrf": token, "kind": "sender_domain", "value": "spam.test"})
     assert "spam.test" in client.get("/blacklist").text
+
+
+def test_favorites_pages(client):
+    from app import favorites, rules
+    token = login(client)
+    r = client.post("/favorites", data={"csrf": token, "name": "Shopping",
+                                        "addresses": "shop@example.test\norders@example.test", "notes": "My stuff"})
+    assert r.status_code == 303 and "ok=" in r.headers["location"]
+    fid = favorites.list_favorites()[0]["id"]
+    mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="shop@example.test")
+    mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="elsewhere@example.test")
+    rules.create_rule(name="Scoped rule", conditions=[], actions=[{"action": "flag"}], scope="orders@example.test")
+    rules.create_rule(name="Global rule", conditions=[], actions=[{"action": "mark_read"}])
+    rules.create_rule(name="Foreign rule", conditions=[], actions=[{"action": "flag"}], scope="elsewhere@example.test")
+
+    listing = client.get("/favorites").text
+    assert "Shopping" in listing and "My stuff" in listing and "shop@example.test" in listing
+    page = client.get(f"/favorites/{fid}").text
+    assert "Hello Wolrd invoice" in page                       # the favorite's email
+    assert "Scoped rule" in page and "Global rule" in page     # its rule + global rules
+    assert "Foreign rule" not in page                          # other recipients' rules are not shown
+    assert "elsewhere@example.test" not in page                # nor their mail
+    assert "shop@example.test" in page
+    empty = client.get(f"/favorites/{fid}?q=zzzzzz").text
+    assert "No emails found" in empty and "Hello Wolrd invoice" not in empty
+
+    # inbox can filter by favorite
+    filtered = client.get(f"/?fav={fid}").text
+    assert "shop@example.test" in filtered and "elsewhere@example.test</span>" not in filtered
+
+    # validation + edit + delete
+    r = client.post("/favorites", data={"csrf": token, "name": "Bad", "addresses": "nope"})
+    assert "err=" in r.headers["location"]
+    r = client.post(f"/favorites/{fid}/update", data={"csrf": token, "name": "Shops", "addresses": "shop@example.test"})
+    assert "ok=" in r.headers["location"] and favorites.get_favorite(fid)["name"] == "Shops"
+    assert client.post(f"/favorites/{fid}/delete").status_code == 403           # CSRF required
+    client.post(f"/favorites/{fid}/delete", data={"csrf": token})
+    assert favorites.get_favorite(fid) is None
+    assert client.get(f"/favorites/{fid}").status_code == 404
 
 
 def test_block_from_message_and_rule_with_next(client):
@@ -113,14 +177,16 @@ def test_block_from_message_and_rule_with_next(client):
     kinds = {(r["kind"], r["value"]) for r in db.query("SELECT kind, value FROM blacklist")}
     assert kinds == {("sender_address", "alice@sender.test"), ("sender_domain", "sender.test"),
                      ("rcpt_address", "bob@example.test"), ("rcpt_domain", "example.test")}
-    # rule created from the message page returns to it; open redirects are ignored
-    r = client.post("/rules", data={"csrf": token, "scope": "bob@example.test", "field": "sender", "op": "contains",
-                                    "value": "alice@sender.test", "action": "flag", "next": f"/messages/{mid}"})
+    # a rule created from the message page returns to it; open redirects are ignored
+    r = client.post("/rules", data={"csrf": token, "scope": "bob@example.test", "cond_field": "sender",
+                                    "cond_op": "contains", "cond_value": "alice@sender.test",
+                                    "act_type": "flag", "act_arg": "", "next": f"/messages/{mid}"})
     assert r.headers["location"].startswith(f"/messages/{mid}?ok=")
-    r = client.post("/rules", data={"csrf": token, "field": "subject", "op": "contains", "value": "x",
-                                    "action": "flag", "next": "//evil.test"})
+    r = client.post("/rules", data={"csrf": token, "cond_field": "subject", "cond_op": "contains",
+                                    "cond_value": "x", "act_type": "flag", "next": "//evil.test"})
     assert r.headers["location"].startswith("/rules?ok=")
-    assert db.one("SELECT scope FROM rules WHERE value='alice@sender.test'")["scope"] == "bob@example.test"
+    first = rules.list_rules()[0]
+    assert first["scope"] == "bob@example.test" and first["conditions"][0]["value"] == "alice@sender.test"
 
 
 def test_two_factor_login_flow(client):

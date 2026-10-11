@@ -49,16 +49,42 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 );
 CREATE TABLE IF NOT EXISTS rules (
     id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
     scope TEXT,                       -- recipient address, NULL = global
-    field TEXT NOT NULL,              -- sender|recipient|subject|body|any|header:<Name>
-    op TEXT NOT NULL,                 -- contains|equals|startswith|endswith|regex
-    value TEXT NOT NULL,
-    action TEXT NOT NULL,             -- forward|delete|flag
-    action_arg TEXT NOT NULL DEFAULT '',
+    match_mode TEXT NOT NULL DEFAULT 'all',   -- all|any: how the conditions combine
     priority INTEGER NOT NULL DEFAULT 100,
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rule_conditions (      -- 0..n per rule ("when")
+    id INTEGER PRIMARY KEY,
+    rule_id INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    field TEXT NOT NULL,              -- sender|recipient|subject|body|any|header:<Name>
+    op TEXT NOT NULL,                 -- contains|not_contains|equals|startswith|endswith|regex
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rule_actions (         -- 1..n per rule ("then")
+    id INTEGER PRIMARY KEY,
+    rule_id INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    action TEXT NOT NULL,             -- flag|mark_read|forward|delete
+    arg TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_rule_conditions ON rule_conditions(rule_id);
+CREATE INDEX IF NOT EXISTS idx_rule_actions ON rule_actions(rule_id);
+CREATE TABLE IF NOT EXISTS favorites (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS favorite_addresses (
+    favorite_id INTEGER NOT NULL REFERENCES favorites(id) ON DELETE CASCADE,
+    address TEXT NOT NULL,
+    PRIMARY KEY (favorite_id, address)
+);
+CREATE INDEX IF NOT EXISTS idx_favorite_addresses ON favorite_addresses(address);
 CREATE TABLE IF NOT EXISTS rule_hits (
     id INTEGER PRIMARY KEY,
     at INTEGER NOT NULL,
@@ -105,12 +131,40 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def _migrate_rules_v2(conn: sqlite3.Connection) -> None:
+    """Old rules had exactly one condition and one action in columns of `rules`.
+    Rebuild the table (SQLite "create new, copy, drop, rename") and move them into
+    rule_conditions / rule_actions. Foreign keys are off so rule_hits keeps its rule_id."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(rules)")}
+    if "field" not in columns:
+        return
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.executescript("""
+        BEGIN;
+        CREATE TABLE rules_new (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '', scope TEXT,
+            match_mode TEXT NOT NULL DEFAULT 'all', priority INTEGER NOT NULL DEFAULT 100,
+            enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
+        INSERT INTO rules_new(id, scope, priority, enabled, created_at)
+            SELECT id, scope, priority, enabled, created_at FROM rules;
+        INSERT INTO rule_conditions(rule_id, position, field, op, value)
+            SELECT id, 0, field, op, value FROM rules;
+        INSERT INTO rule_actions(rule_id, position, action, arg)
+            SELECT id, 0, action, action_arg FROM rules;
+        DROP TABLE rules;
+        ALTER TABLE rules_new RENAME TO rules;
+        COMMIT;
+    """)
+    conn.execute("PRAGMA foreign_keys=ON")
+
+
 def init() -> None:
     conn = connect()
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
         _migrate(conn)
+        _migrate_rules_v2(conn)
         conn.commit()
     finally:
         conn.close()

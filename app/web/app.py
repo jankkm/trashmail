@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import auth, config, db, mailstore, smtp_server
-from . import routes_admin, routes_auth, routes_mail
+from . import routes_admin, routes_auth, routes_favorites, routes_mail
 from .deps import BASE, LoginRequired, render
 
 log = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ def create_app(start_smtp: bool = True) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
     app.include_router(routes_auth.router)
     app.include_router(routes_mail.router)
+    app.include_router(routes_favorites.router)
     app.include_router(routes_admin.router)
 
     @app.exception_handler(LoginRequired)
