@@ -11,18 +11,19 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from . import config, db
+from . import config, db, mailstore
 
 FIELDS = ("sender", "recipient", "subject", "body", "any", "header")
 OPS = ("contains", "not_contains", "equals", "startswith", "endswith", "regex")
-ACTIONS = ("flag", "mark_read", "forward", "delete")
+ACTIONS = ("flag", "mark_read", "tag", "forward", "delete")
 MATCH_MODES = ("all", "any")
 
 FIELD_LABELS = {"sender": "Sender", "recipient": "Recipient", "subject": "Subject", "body": "Body",
                 "any": "Any header or body", "header": "Specific header…"}
 OP_LABELS = {"contains": "contains", "not_contains": "does not contain", "equals": "equals",
              "startswith": "starts with", "endswith": "ends with", "regex": "matches regex"}
-ACTION_LABELS = {"flag": "Flag", "mark_read": "Mark as read", "forward": "Forward to", "delete": "Delete"}
+ACTION_LABELS = {"flag": "Flag", "mark_read": "Mark as read", "tag": "Add tag", "forward": "Forward to",
+                 "delete": "Delete"}
 BLACKLIST_KINDS = {
     "sender_address": "Sender address",
     "sender_domain": "Sender domain",
@@ -227,7 +228,11 @@ def normalize(conditions: list[dict], actions: list[dict], match_mode: str = "al
             raise RuleError("Unknown action")
         if action == "forward" and not ADDRESS_RE.fullmatch(arg):
             raise RuleError("The forward action needs a valid email address")
-        clean_actions.append({"action": action, "arg": arg if action == "forward" else ""})
+        if action == "tag":
+            arg = mailstore.normalize_tag(arg)
+            if not arg:
+                raise RuleError("The tag action needs a tag name")
+        clean_actions.append({"action": action, "arg": arg if action in ("forward", "tag") else ""})
     if not clean_actions:
         raise RuleError("Add at least one action")
     return clean_conditions, clean_actions, match_mode

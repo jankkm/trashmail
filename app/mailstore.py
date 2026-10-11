@@ -154,7 +154,8 @@ def _clean_token(value: str) -> str:
 
 
 def store(raw: bytes, *, mail_from: str, rcpt: str, remote_ip: str = "", helo: str = "",
-          auth: AuthResult | None = None, flagged: bool = False, read: bool = False) -> int:
+          auth: AuthResult | None = None, flagged: bool = False, read: bool = False,
+          tags: list[str] | None = None) -> int:
     """Write one copy of the message for one recipient. Returns the message id."""
     auth = auth or AuthResult()
     now = time.time()
@@ -195,8 +196,59 @@ def store(raw: bytes, *, mail_from: str, rcpt: str, remote_ip: str = "", helo: s
             "INSERT INTO messages_fts(rowid, subject, sender, recipient, body) VALUES(?,?,?,?,?)",
             (mid, subject, f"{from_header} {mail_from}", rcpt, text[:200_000]),
         )
+        if tags:
+            conn.executemany("INSERT OR IGNORE INTO message_tags(message_id, tag) VALUES(?,?)",
+                             [(mid, t) for t in tags])
     _usage_changed()
     return mid
+
+
+# --------------------------------------------------------------------------- #
+# Tags
+# --------------------------------------------------------------------------- #
+TAG_MAX = 32
+
+
+def normalize_tag(raw: str) -> str:
+    """Whitespace collapsed, no commas/semicolons, at most TAG_MAX characters."""
+    return re.sub(r"\s+", " ", re.sub(r"[,;]", " ", raw or "")).strip()[:TAG_MAX]
+
+
+def parse_tags(text: str) -> list[str]:
+    """Comma / semicolon / newline separated list -> unique (case-insensitive) normalized tags."""
+    out: list[str] = []
+    for part in re.split(r"[,;\n]+", text or ""):
+        tag = normalize_tag(part)
+        if tag and tag.lower() not in {t.lower() for t in out}:
+            out.append(tag)
+    return out
+
+
+def add_tags(message_ids: list[int], tags: list[str]) -> None:
+    if not message_ids or not tags:
+        return
+    with db.tx() as conn:
+        conn.executemany("INSERT OR IGNORE INTO message_tags(message_id, tag) VALUES(?,?)",
+                         [(mid, t) for mid in message_ids for t in tags])
+
+
+def remove_tag(message_id: int, tag: str) -> None:
+    db.execute("DELETE FROM message_tags WHERE message_id=? AND tag=?", (message_id, tag))
+
+
+def tags_for(message_ids: list[int]) -> dict[int, list[str]]:
+    if not message_ids:
+        return {}
+    marks = ",".join("?" * len(message_ids))
+    out: dict[int, list[str]] = {}
+    for r in db.query(f"SELECT message_id, tag FROM message_tags WHERE message_id IN ({marks}) "
+                      "ORDER BY tag COLLATE NOCASE", message_ids):
+        out.setdefault(r["message_id"], []).append(r["tag"])
+    return out
+
+
+def all_tags() -> list[sqlite3.Row]:
+    return db.query("SELECT tag, COUNT(*) AS c FROM message_tags GROUP BY tag ORDER BY tag COLLATE NOCASE")
 
 
 # --------------------------------------------------------------------------- #
@@ -215,8 +267,8 @@ def _fts_query(q: str) -> str:
     return " ".join('"' + t.replace('"', '""') + '"*' for t in tokens)
 
 
-def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None, flagged: bool = False,
-                  unread: bool = False, limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
+def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None, tag: str = "",
+                  flagged: bool = False, unread: bool = False, limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
     where, args = [], []
     if q.strip():
         fts = _fts_query(q)
@@ -232,6 +284,9 @@ def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None
             return [], 0
         where.append(f"m.rcpt_to IN ({','.join('?' * len(rcpts))})")
         args.extend(a.lower() for a in rcpts)
+    if tag.strip():
+        where.append("m.id IN (SELECT message_id FROM message_tags WHERE tag = ?)")
+        args.append(tag.strip())
     if flagged:
         where.append("m.flagged = 1")
     if unread:

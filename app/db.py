@@ -97,6 +97,12 @@ CREATE TABLE IF NOT EXISTS rule_hits (
     detail TEXT NOT NULL DEFAULT '',
     ok INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS message_tags (
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL COLLATE NOCASE,
+    PRIMARY KEY (message_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_message_tags_tag ON message_tags(tag);
 CREATE TABLE IF NOT EXISTS blacklist (
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL,               -- sender_address|sender_domain|rcpt_address|rcpt_domain
@@ -121,6 +127,7 @@ MIGRATIONS = [
     ("users", "totp_enabled", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "totp_last_step", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "totp_recovery", "TEXT NOT NULL DEFAULT '[]'"),
+    ("users", "default_view", "TEXT NOT NULL DEFAULT 'all'"),     # inbox start view: all|unread|flagged
 ]
 
 

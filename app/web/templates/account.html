@@ -12,6 +12,14 @@
       <div><b>{{ user.name or user.username }}</b><div class="muted">@{{ user.username }} · {{ 'Administrator' if user.is_admin else 'User' }}</div></div>
     </div>
     <label class="field">Display name<input name="name" value="{{ user.name }}"></label>
+    <label class="field">Default inbox view
+      <select name="default_view">
+        <option value="all" {{ 'selected' if user.default_view == 'all' }}>All</option>
+        <option value="unread" {{ 'selected' if user.default_view == 'unread' }}>Unread</option>
+        <option value="flagged" {{ 'selected' if user.default_view == 'flagged' }}>Flagged</option>
+      </select>
+      <span class="hint">What the inbox shows when you open it. You can still switch with All / Unread / Flagged.</span>
+    </label>
     <hr style="border:0;border-top:1px solid var(--border);width:100%;margin:2px 0">
     <label class="field">Current password <span class="hint">Only needed when setting a new password.</span>
       <input type="password" name="current" autocomplete="current-password"></label>

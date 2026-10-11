@@ -67,8 +67,12 @@ def _hue(value) -> int:
     return zlib.crc32(_saddr(value).lower().encode() or b"?") % 360
 
 
+def _taghue(tag) -> int:
+    return zlib.crc32(str(tag).lower().encode()) % 360
+
+
 templates.env.filters.update({"dt": _dt, "short": _short, "size": _size, "sname": _sname,
-                              "saddr": _saddr, "initials": _initials, "hue": _hue})
+                              "saddr": _saddr, "initials": _initials, "hue": _hue, "taghue": _taghue})
 templates.env.globals["icon"] = icon
 
 

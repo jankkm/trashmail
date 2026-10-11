@@ -27,6 +27,32 @@
     setTimeout(hide, t.classList.contains('err') ? 9000 : 4500);
   });
 
+  // clickable star in the message list: flag/unflag in place (the button also works as a plain form post)
+  document.addEventListener('click', async (e) => {
+    const star = e.target.closest('button.star[formaction]');
+    if (!star) return;
+    const form = star.closest('form');
+    if (!form || !window.fetch) return;             // fall back to the normal submit
+    e.preventDefault();
+    const was = star.classList.contains('on');
+    const apply = (on) => {
+      star.classList.toggle('on', on);
+      star.setAttribute('aria-pressed', String(on));
+      const label = on ? 'Remove flag' : 'Flag this message';
+      star.title = label; star.setAttribute('aria-label', label);
+    };
+    apply(!was);                                     // optimistic
+    try {
+      const body = new URLSearchParams({ csrf: form.querySelector('[name=csrf]').value, next: '/' });
+      const r = await fetch(star.getAttribute('formaction'), {
+        method: 'POST', body, headers: { 'X-Requested-With': 'fetch' }, credentials: 'same-origin' });
+      if (!r.ok) throw new Error(String(r.status));
+    } catch (err) {
+      apply(was);                                    // roll back and tell the user
+      star.animate([{ transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'none' }], 200);
+    }
+  });
+
   // inbox bulk selection
   const bulk = document.querySelector('[data-bulk]');
   if (bulk) {
@@ -60,8 +86,12 @@
     const action = f.querySelector('[name=act_type]'), arg = f.querySelector('[data-forward]');
     const sync = () => {
       if (!arg) return;
-      arg.hidden = action.value !== 'forward';
-      arg.querySelector('input').required = action.value === 'forward';
+      const needs = action.value === 'forward' || action.value === 'tag';
+      const input = arg.querySelector('input');
+      arg.hidden = !needs;
+      input.required = needs;
+      input.type = action.value === 'forward' ? 'email' : 'text';
+      input.placeholder = action.value === 'forward' ? 'Forward to address' : 'Tag name';
     };
     action?.addEventListener('change', sync); sync();
   });
@@ -93,8 +123,11 @@
       });
       $$('.act-row', acts).forEach((row) => {
         const arg = row.querySelector('[data-arg]');
-        arg.hidden = row.querySelector('[name=act_type]').value !== 'forward';
+        const type = row.querySelector('[name=act_type]').value;
+        arg.hidden = type !== 'forward' && type !== 'tag';
         arg.required = !arg.hidden;
+        arg.type = type === 'forward' ? 'email' : 'text';
+        arg.placeholder = type === 'forward' ? 'name@example.com' : 'Tag name';
       });
       $$('[data-remove]', acts).forEach((b) => { b.hidden = acts.children.length < 2; });   // keep >= 1 action
     };

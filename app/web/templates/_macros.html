@@ -23,7 +23,11 @@
     <div class="clause"><span class="lbl">Then</span>
       <div class="rule-text">
         {% for a in r.actions %}
+          {% if a.action == 'tag' %}
+          <span class="tok act tag-act">{{ labels.ACTION_LABELS['tag'] }} <span class="tag" style="--h: {{ a.arg|taghue }}">{{ a.arg }}</span></span>
+          {% else %}
           <span class="tok act {{ a.action }}">{{ labels.ACTION_LABELS[a.action] }}{% if a.action == 'forward' %} {{ a.arg }}{% endif %}</span>
+          {% endif %}
         {% endfor %}
       </div>
     </div>

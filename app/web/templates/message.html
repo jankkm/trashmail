@@ -61,7 +61,7 @@
           </div>
           <input name="cond_value" id="qr-value" value="{{ m.mail_from }}" placeholder="Text to match" required>
           <label class="field">Then
-            <select name="act_type"><option value="flag">Flag</option><option value="mark_read">Mark as read</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
+            <select name="act_type"><option value="flag">Flag</option><option value="mark_read">Mark as read</option><option value="tag">Add tag</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
           </label>
           <div data-forward hidden><input type="email" name="act_arg" placeholder="Forward to address"></div>
           <button class="btn primary">Add rule</button>
@@ -121,6 +121,27 @@
   </div>
 
   <aside>
+    <section class="card" style="margin-top:0">
+      <div class="card-header"><span class="ico">{{ icon('tag', 18) }}</span><h2>Tags</h2></div>
+      <div class="card-body stack">
+        <div class="chips">
+          {% for t in tags %}
+          <form method="post" action="/messages/{{ m.id }}/tags/remove" class="tag-form">
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="tag" value="{{ t }}">
+            <a class="tag" style="--h: {{ t|taghue }}" href="/?tag={{ t|urlencode }}">{{ t }}</a><button class="tag-x" title="Remove tag" aria-label="Remove tag {{ t }}">{{ icon('x', 12) }}</button>
+          </form>
+          {% else %}<span class="muted">No tags yet.</span>{% endfor %}
+        </div>
+        <form method="post" action="/messages/{{ m.id }}/tags" class="row" style="flex-wrap:nowrap">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input name="tag" placeholder="Add a tag…" maxlength="64" list="known-tags" aria-label="Tag name" required>
+          <button class="btn">{{ icon('plus', 15) }} Add</button>
+        </form>
+        <datalist id="known-tags">{% for t in all_tags %}<option value="{{ t.tag }}">{% endfor %}</datalist>
+        <p class="hint">Separate several tags with commas. Rules can add tags automatically.</p>
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-header"><span class="ico">{{ icon('shield-check', 18) }}</span><h2>Authentication</h2></div>
       <div class="card-body checks">

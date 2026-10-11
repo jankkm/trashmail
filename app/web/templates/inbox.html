@@ -4,9 +4,18 @@
 <header class="page-header">
   <div>
     <h1>Inbox</h1>
-    <p class="sub">{{ total }} message{{ '' if total == 1 else 's' }}{% if q or rcpt or fav or flagged or unread %} match your filters{% endif %} · updated {{ now }}</p>
+    <p class="sub">{{ total }} {{ 'unread ' if view == 'unread' else ('flagged ' if view == 'flagged' else '') }}message{{ '' if total == 1 else 's' }}{% if q or rcpt or fav or tag %} match your filters{% endif %} · updated {{ now }}</p>
   </div>
   <div class="actions">
+    {% if view != default_view %}
+    <form method="post" action="/account/default-view">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="view" value="{{ view }}">
+      <input type="hidden" name="next" value="/?{{ full_qs }}">
+      <button class="btn" title="Open the inbox on this view every time">{{ icon('pin', 16) }} Make “{{ view|capitalize }}” my default</button>
+    </form>
+    {% elif view != 'all' %}
+    <span class="badge">{{ icon('pin', 12) }} Your default view</span>
+    {% endif %}
     <a class="btn" href="/?{{ full_qs }}">{{ icon('refresh', 16) }} Refresh</a>
   </div>
 </header>
@@ -24,7 +33,7 @@
   </div>
 </section>
 
-<form class="toolbar" method="get" action="/">
+<form class="toolbar" method="get" action="/" id="filters">
   <div class="input-icon">{{ icon('search', 16) }}<input type="search" name="q" value="{{ q }}" placeholder="Search subject, sender, recipient and text…"></div>
   <select name="rcpt" onchange="this.form.submit()" aria-label="Recipient">
     <option value="">All recipients</option>
@@ -36,21 +45,31 @@
     {% for f in favs %}<option value="{{ f.id }}" {{ 'selected' if f.id == fav }}>★ {{ f.name }}</option>{% endfor %}
   </select>
   {% endif %}
+  {% if all_tags %}
+  <select name="tag" onchange="this.form.submit()" aria-label="Tag">
+    <option value="">All tags</option>
+    {% for t in all_tags %}<option value="{{ t.tag }}" {{ 'selected' if t.tag|lower == tag|lower }}>{{ t.tag }} ({{ t.c }})</option>{% endfor %}
+  </select>
+  {% endif %}
+  {% set sep = qs_search ~ '&' if qs_search else '' %}
   <div class="segmented">
-    <a href="/?{{ qs_search }}" class="{{ 'on' if not unread and not flagged }}">All</a>
-    <a href="/?{{ qs_search }}&unread=1" class="{{ 'on' if unread }}">Unread</a>
-    <a href="/?{{ qs_search }}&flagged=1" class="{{ 'on' if flagged }}">Flagged</a>
+    <a href="/?{{ sep }}view=all" class="{{ 'on' if view == 'all' }}">All</a>
+    <a href="/?{{ sep }}view=unread" class="{{ 'on' if view == 'unread' }}">Unread</a>
+    <a href="/?{{ sep }}view=flagged" class="{{ 'on' if view == 'flagged' }}">Flagged</a>
   </div>
-  {% if unread %}<input type="hidden" name="unread" value="1">{% endif %}
-  {% if flagged %}<input type="hidden" name="flagged" value="1">{% endif %}
+  <input type="hidden" name="view" value="{{ view }}">
   <button class="btn primary">Search</button>
-  {% if q or rcpt or fav or unread or flagged %}<a class="btn ghost" href="/">Clear</a>{% endif %}
+  {% if q or rcpt or fav or tag or view != default_view %}<a class="btn ghost" href="/">Clear</a>{% endif %}
 </form>
+<datalist id="all-tags">{% for t in all_tags %}<option value="{{ t.tag }}">{% endfor %}</datalist>
 
 {% set next_url = '/?' ~ full_qs %}
 {% set pager_url = '/?' ~ (base_qs ~ '&' if base_qs else '') %}
-{% set filtered = q or rcpt or fav or flagged or unread %}
-{% set empty_title = 'No messages match your filters' if filtered else 'No messages yet' %}
-{% set empty_text = 'Try a different search or clear the filters.' if filtered else 'Point an MX record at this server and send a mail to any address of your domains.' %}
+{% set narrowed = q or rcpt or fav or tag %}
+{% set caught_up = view == 'unread' and not narrowed %}
+{% set empty_title = "You're all caught up" if caught_up else ('No messages match your filters' if (narrowed or view != 'all') else 'No messages yet') %}
+{% set empty_text = 'There are no unread messages.' if caught_up else ('Try a different search or clear the filters.' if (narrowed or view != 'all') else 'Point an MX record at this server and send a mail to any address of your domains.') %}
+{% set empty_link = '/?view=all' if (caught_up or (view != 'all' and not narrowed)) else '' %}
+{% set empty_label = 'Show all messages' %}
 {% include "_messages.html" %}
 {% endblock %}

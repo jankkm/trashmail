@@ -67,3 +67,4 @@ def test_migration_adds_columns_to_old_database(tmp_path, monkeypatch):
     db.init()  # idempotent
     row = db.one("SELECT * FROM users WHERE username='old'")
     assert row["totp_enabled"] == 0 and row["totp_recovery"] == "[]"
+    assert row["default_view"] == "all"

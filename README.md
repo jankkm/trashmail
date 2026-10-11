@@ -17,9 +17,10 @@ It **never relays** mail: it only accepts messages for its own domains and store
 |---|---|
 | Receiving | aiosmtpd server, opportunistic STARTTLS, size limit, per-IP rate limit, only accepts configured domains |
 | Storage | One `.eml` per message *per recipient* in `DATA_DIR/mail/YYYY/MM/<uuid>.eml`; metadata + FTS5 index in SQLite |
-| Inbox | List, filter by recipient, full-text search (subject/sender/recipient/body), unread/flagged filters, bulk actions, 24 h activity chart |
+| Inbox | Unread rows stand out (bold, accent bar) from read ones (muted); click the star to flag in place. Filter by recipient, favorite and **tag**, full-text search, All / Unread / Flagged view with a **per-user default** (e.g. always start on Unread), bulk actions incl. bulk tagging, 24 h activity chart. |
+| Tags | Free-form labels on messages. Add them by hand (message page, bulk bar) or automatically with the rule action **Add tag**; click a tag to filter. Case-insensitive, max 32 characters. |
 | Message view | Sanitised HTML in a sandboxed iframe, **external resources blocked until you click "Load external resources"**, plain text, headers, attachments, download `.eml`, forward, flag, delete |
-| Rules | Per recipient address or global. **Any number of conditions** (sender / recipient / subject / body / any / a specific header; contains, does not contain, equals, starts/ends with, regex), combined with *all* or *any*. **One or more actions** that run in order: **flag**, **mark as read**, **forward**, **delete**. Named, prioritised, editable, with a hit log. |
+| Rules | Per recipient address or global. **Any number of conditions** (sender / recipient / subject / body / any / a specific header; contains, does not contain, equals, starts/ends with, regex), combined with *all* or *any*. **One or more actions** that run in order: **flag**, **mark as read**, **add tag**, **forward**, **delete**. Named, prioritised, editable, with a hit log. |
 | Favorites | A named group of recipient addresses with notes. The favorite's page shows all its emails (search, unread/flagged, bulk actions) and all rules scoped to its addresses, with an inline rule editor. The inbox can be filtered by favorite. |
 | Blacklist | Sender address, sender domain, recipient address, recipient domain. Rejected with `550` during the SMTP dialogue. Domains also match subdomains. |
 | Auth checks | SPF, DKIM, DMARC results shown as badges; optional reject on SPF fail |
@@ -212,7 +213,7 @@ that are shown once. At sign-in the password is followed by a code (or a recover
   AND (`match_mode=all`) or OR (`any`); no conditions = matches every message in scope. All enabled matching
   rules apply, ordered by `priority`, and each runs all of its actions in order. Actions combine across rules:
   `delete` wins (the mail is never stored, but forward actions still run and every action is logged),
-  `flag` / `mark_read` set the stored message's state. `equals` on sender/recipient also matches a bare
+  `flag` / `mark_read` set the stored message's state and `tag` actions attach their tags to it. `equals` on sender/recipient also matches a bare
   address inside `Name <addr>`. Tables: `rules`, `rule_conditions`, `rule_actions`, `rule_hits`.
 * **HTML mail safety**: `nh3` sanitises HTML; it is served from `/messages/{id}/body` inside an
   `<iframe sandbox>` with a strict CSP (`default-src 'none'; img-src data:`). `cid:` images are inlined
@@ -237,6 +238,7 @@ app/
   smtp_server.py     aiosmtpd handler + deliver() pipeline (rules → store → forward)
   mailstore.py       .eml write, indexing, search, listing, HTML sanitising, retention
   rules.py           rules (conditions/actions CRUD + matching), blacklist, local-domain policy
+                     (tags live in mailstore.py: message_tags table, add_tags/tags_for/all_tags)
   favorites.py       favorites (named address groups with notes) + their counts
   forwarder.py       outbound SMTP (aiosmtplib) using effective settings
   security_checks.py SPF / DKIM / DMARC
@@ -277,7 +279,7 @@ automatic dark mode.
 * **JS**: only `app/web/static/app.js` (dialogs, confirm prompts, bulk selection, toasts, settings save
   bar). No build step, no framework. Destructive buttons use `data-confirm="..."`; dialogs use
   `data-open="id"` / `data-close`.
-* **Pages**: inbox (stats, 24 h chart, search, filters incl. favorite, bulk actions), message (sandboxed
+* **Pages**: inbox (stats, 24 h chart, search, filters incl. favorite and tag, per-user default view, clickable stars, bulk actions), message (sandboxed
   body, auth badges, details, attachments, forward, Block/Rule menus), favorites (cards) and a favorite
   page (emails + notes + rules side by side), rules (sentence-style cards + a dialog editor with dynamic
   condition/action rows, `static/app.js`),

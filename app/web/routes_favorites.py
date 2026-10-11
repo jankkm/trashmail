@@ -60,7 +60,7 @@ def favorite_page(request: Request, fid: int, q: str = "", unread: str = "", fla
         scoped_rules=scoped, global_rules=everyone, counts=mine, labels=rules,
         pager_url=path + "?" + (urlencode(base) + "&" if base else ""), next_url=here,
         editor_json={r["id"]: rules.rule_for_editor(r) for r in scoped + everyone},
-        suggestions=[], empty_text="No messages for this favorite yet.",
+        suggestions=[], msg_tags=mailstore.tags_for([r["id"] for r in rows]),
         **ruleui.editor_context(fav["addresses"], path))
 
 

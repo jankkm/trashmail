@@ -106,7 +106,7 @@ def account(request: Request, user=Depends(current_user)):
 
 @router.post("/account", dependencies=[Depends(verify_csrf)])
 def account_save(name: str = Form(""), current: str = Form(""), new_password: str = Form(""),
-                 user=Depends(current_user)):
+                 default_view: str = Form(""), user=Depends(current_user)):
     if new_password:
         if not auth.verify_password(user["password_hash"], current):
             return back("/account", err="Current password is wrong")
@@ -114,7 +114,19 @@ def account_save(name: str = Form(""), current: str = Form(""), new_password: st
             return back("/account", err="Password must be at least 8 characters")
         db.execute("UPDATE users SET password_hash=? WHERE id=?", (auth.hash_password(new_password), user["id"]))
     db.execute("UPDATE users SET name=? WHERE id=?", (name.strip(), user["id"]))
+    if default_view in ("all", "unread", "flagged"):
+        db.execute("UPDATE users SET default_view=? WHERE id=?", (default_view, user["id"]))
     return back("/account", ok="Saved")
+
+
+@router.post("/account/default-view", dependencies=[Depends(verify_csrf)])
+def set_default_view(view: str = Form(""), next: str = Form("/"), user=Depends(current_user)):
+    """The "make default" pin next to the inbox view switch."""
+    target = next if next.startswith("/") and not next.startswith("//") else "/"
+    if view not in ("all", "unread", "flagged"):
+        return back(target, err="Unknown view")
+    db.execute("UPDATE users SET default_view=? WHERE id=?", (view, user["id"]))
+    return back(target, ok=f"“{view.capitalize()}” is now your default inbox view")
 
 
 # --- two-factor authentication management ---------------------------------------------------- #

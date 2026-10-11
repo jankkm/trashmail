@@ -178,11 +178,13 @@ async def deliver(raw: bytes, *, mail_from: str, rcpt: str, ip: str = "", helo: 
     mid = None
     if "delete" not in kinds:
         mid = mailstore.store(raw, mail_from=mail_from, rcpt=rcpt, remote_ip=ip, helo=helo, auth=auth,
-                              flagged="flag" in kinds, read="mark_read" in kinds)
+                              flagged="flag" in kinds, read="mark_read" in kinds,
+                              tags=[act["arg"] for _, act in actions if act["action"] == "tag"])
 
     for rule, act in actions:
         if act["action"] != "forward":
-            rules.log_hit(rule, act["action"], message_id=mid, ctx=ctx)
+            rules.log_hit(rule, act["action"], message_id=mid, ctx=ctx,
+                          detail=act["arg"] if act["action"] == "tag" else "")
             continue
         if already_forwarded:
             rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail="skipped: loop protection", ok=False)

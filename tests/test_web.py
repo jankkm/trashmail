@@ -267,3 +267,75 @@ def test_filter_forms_survive_empty_and_junk_numeric_params(client):
     fid = favorites.create("Mine", "bob@example.test")
     assert client.get(f"/favorites/{fid}?q=&unread=&flagged=&page=").status_code == 200
     assert client.get(f"/?fav={fid}&rcpt=").status_code == 200
+
+
+def test_tags_on_message_page_filter_and_bulk(client):
+    token = login(client)
+    a = mailstore.store(SAMPLE, mail_from="alice@sender.test", rcpt="bob@example.test")
+    b = mailstore.store(SAMPLE.replace(b"invoice", b"offer"), mail_from="alice@sender.test", rcpt="carol@example.test")
+    r = client.post(f"/messages/{a}/tags", data={"csrf": token, "tag": "Invoices, Work"})
+    assert r.status_code == 303 and "err=" not in r.headers["location"]
+    assert "err=" in client.post(f"/messages/{a}/tags", data={"csrf": token, "tag": " , "}).headers["location"]
+    page = client.get(f"/messages/{a}").text
+    assert "Invoices" in page and "Work" in page
+    inbox = client.get("/?view=all").text
+    assert 'href="/?tag=Invoices"' in inbox                              # chip on the list row
+    only = client.get("/?view=all&tag=invoices").text
+    assert "<b>Hello Wolrd offer</b>" not in only and "<b>Hello Wolrd invoice</b>" in only
+    # bulk tagging
+    client.post("/messages/bulk", data={"csrf": token, "action": "tag", "tag": "Later", "ids": [a, b]})
+    assert mailstore.tags_for([a, b]) == {a: ["Invoices", "Later", "Work"], b: ["Later"]}
+    assert "err=" in client.post("/messages/bulk", data={"csrf": token, "action": "tag", "tag": "", "ids": [a]}).headers["location"]
+    # removing a tag
+    client.post(f"/messages/{a}/tags/remove", data={"csrf": token, "tag": "work"})
+    assert mailstore.tags_for([a])[a] == ["Invoices", "Later"]
+    assert client.post(f"/messages/{a}/tags", data={"tag": "x"}).status_code == 403   # CSRF
+
+
+def test_default_inbox_view(client):
+    token = login(client)
+    unread = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    read = mailstore.store(SAMPLE.replace(b"invoice", b"report"), mail_from="a@b.test", rcpt="bob@example.test", read=True)
+    flagged = mailstore.store(SAMPLE.replace(b"invoice", b"urgent"), mail_from="a@b.test", rcpt="bob@example.test",
+                              flagged=True, read=True)
+
+    def subjects(url):
+        text = client.get(url).text
+        return {w for w in ("invoice", "report", "urgent") if f"<b>Hello Wolrd {w}</b>" in text}
+
+    assert subjects("/") == {"invoice", "report", "urgent"}              # default: all
+    # pin "Unread" as the default from the inbox
+    r = client.post("/account/default-view", data={"csrf": token, "view": "unread", "next": "/?view=unread"})
+    assert r.status_code == 303 and "ok=" in r.headers["location"]
+    assert subjects("/") == {"invoice"}                                  # plain "/" now starts on unread
+    assert subjects("/?view=all") == {"invoice", "report", "urgent"}     # explicit choice still wins
+    assert subjects("/?view=flagged") == {"urgent"}
+    assert subjects("/?unread=1") == {"invoice"}                         # legacy links keep working
+    assert "all caught up" in (mailstore.set_read([unread], True) or client.get("/").text)
+    # the account page sets it too; junk values are ignored
+    client.post("/account", data={"csrf": token, "name": "Admin", "default_view": "flagged"})
+    assert subjects("/") == {"urgent"}
+    client.post("/account", data={"csrf": token, "name": "Admin", "default_view": "bogus"})
+    assert subjects("/") == {"urgent"}
+    assert "err=" in client.post("/account/default-view", data={"csrf": token, "view": "x"}).headers["location"]
+    # open redirect target is rejected
+    r = client.post("/account/default-view", data={"csrf": token, "view": "all", "next": "//evil.test"})
+    assert r.headers["location"].startswith("/?")
+
+
+def test_star_toggles_flag_from_the_list(client):
+    token = login(client)
+    mid = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    page = client.get("/?view=all").text
+    assert f'formaction="/messages/{mid}/star"' in page and 'aria-pressed="false"' in page
+    r = client.post(f"/messages/{mid}/star", data={"csrf": token, "next": "/?view=all"})
+    assert r.status_code == 303 and r.headers["location"] == "/?view=all"
+    assert mailstore.get(mid)["flagged"] == 1 and 'aria-pressed="true"' in client.get("/?view=all").text
+    # in-place variant used by the script: no redirect, no body
+    r = client.post(f"/messages/{mid}/star", data={"csrf": token}, headers={"X-Requested-With": "fetch"})
+    assert r.status_code == 204 and mailstore.get(mid)["flagged"] == 0
+    # CSRF and redirect target are enforced
+    assert client.post(f"/messages/{mid}/star", data={"next": "/"}).status_code == 403
+    r = client.post(f"/messages/{mid}/star", data={"csrf": token, "next": "//evil.test"})
+    assert r.headers["location"] == "/"                          # off-site target replaced by the inbox
+    assert client.post("/messages/99999/star", data={"csrf": token}).status_code == 404
