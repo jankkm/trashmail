@@ -176,3 +176,10 @@ def log_hit(rule, *, message_id: int | None, ctx: Context, detail: str = "", ok:
         (int(time.time()), rule["id"], message_id, ctx.sender[:200], ctx.recipient, ctx.subject[:200],
          rule["action"], detail[:300], 1 if ok else 0),
     )
+
+
+def forwards_last_hour() -> int:
+    """Successful rule-triggered forwards in the last hour (used for the hourly cap)."""
+    row = db.one("SELECT COUNT(*) AS c FROM rule_hits WHERE action='forward' AND ok=1 AND at > ?",
+                 (int(time.time()) - 3600,))
+    return row["c"]

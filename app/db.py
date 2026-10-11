@@ -88,11 +88,29 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS never alters an existing table,
+# so every addition must be listed here as (table, column, definition).
+MIGRATIONS = [
+    ("users", "totp_secret", "TEXT"),
+    ("users", "totp_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "totp_last_step", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "totp_recovery", "TEXT NOT NULL DEFAULT '[]'"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, definition in MIGRATIONS:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init() -> None:
     conn = connect()
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()

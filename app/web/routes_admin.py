@@ -103,6 +103,14 @@ def users_update(uid: int, name: str = Form(""), is_admin: str = Form(""), passw
     return back("/users", ok="User updated")
 
 
+@router.post("/users/{uid}/reset-2fa", dependencies=CSRF)
+def users_reset_2fa(uid: int, admin=Depends(admin_user)):
+    if auth.get_user(uid) is None:
+        return back("/users", err="User not found")
+    auth.totp_disable(uid)
+    return back("/users", ok="Two-factor authentication reset")
+
+
 @router.post("/users/{uid}/delete", dependencies=CSRF)
 def users_delete(uid: int, admin=Depends(admin_user)):
     try:
@@ -131,7 +139,11 @@ def settings_page(request: Request, admin=Depends(admin_user)):
     groups: dict[str, list] = {}
     for item in items:
         groups.setdefault(item["s"].group, []).append(item)
+    from .deps import _size
+    used, cap = mailstore.storage_used(0), mailstore.storage_cap()
     return render(request, "settings.html", nav="settings", groups=groups,
+                  used_human=_size(used), cap_human=_size(cap) if cap else "",
+                  usage_pct=round(100 * used / cap) if cap else None,
                   tls=bool(config.boot().tls_cert and config.boot().tls_key),
                   smtp_port=config.boot().smtp_port)
 

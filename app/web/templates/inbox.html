@@ -60,7 +60,7 @@
   </div>
   {% for m in rows %}
   <div class="msg-row {{ 'unread' if not m.is_read }}">
-    <a class="stretch" href="/messages/{{ m.id }}" aria-label="Open message"></a>
+    <a class="stretch" href="/messages/{{ m.id }}" aria-label="Open: {{ m.subject or '(no subject)' }}" title="{{ m.received_ts|dt }}"></a>
     <input class="sel" type="checkbox" name="ids" value="{{ m.id }}" aria-label="Select">
     <span class="star {{ 'on' if m.flagged }}">{{ icon('star', 16) }}</span>
     <span class="avatar" style="--h: {{ (m.from_header or m.mail_from)|hue }}">{{ (m.from_header or m.mail_from)|initials }}</span>
@@ -70,7 +70,7 @@
       <div class="line ellipsis"><b>{{ m.subject or '(no subject)' }}</b>{% if m.snippet %} — {{ m.snippet }}{% endif %}</div>
     </div>
     <span class="rcpt"><span class="badge ellipsis" style="max-width:100%;display:block;line-height:20px">{{ m.rcpt_to }}</span></span>
-    <time title="{{ m.received_ts|dt }}">{{ m.received_ts|short }}</time>
+    <time>{{ m.received_ts|short }}</time>
   </div>
   {% endfor %}
   {% if pages > 1 %}

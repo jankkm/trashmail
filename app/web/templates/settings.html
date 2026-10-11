@@ -2,11 +2,14 @@
 {% block title %}Settings · Trashmail{% endblock %}
 {% block content %}
 {% set meta = {
-  'Receiving': ('inbox', 'What the server accepts and how strict it is.'),
-  'Storage': ('database', 'How long mail is kept.'),
+  'Receiving': ('inbox', 'What the server accepts.'),
+  'Limits': ('shield', 'Abuse protection for the public SMTP port.'),
+  'Storage': ('database', 'How long mail is kept and how much space it may use.'),
   'Forwarding': ('send', 'Outbound SMTP account used when forwarding mail.'),
 } %}
-{% set suffix = {'MAX_MESSAGE_SIZE': 'bytes', 'RATE_LIMIT_PER_IP': 'per min', 'RETENTION_DAYS': 'days'} %}
+{% set suffix = {'MAX_MESSAGE_SIZE': 'bytes', 'RATE_LIMIT_PER_IP': 'per min', 'RETENTION_DAYS': 'days',
+                 'MAX_STORAGE_MB': 'MB', 'MAX_RECIPIENTS': 'recipients', 'MAX_CONNECTIONS': 'connections',
+                 'MAX_CONNECTIONS_PER_IP': 'per IP', 'COMMAND_LIMIT': 'commands', 'FORWARD_LIMIT_PER_HOUR': 'per hour'} %}
 {% set srcs = {'ui': ('info', 'Saved in UI'), 'env': ('', 'From environment'), 'env-live': ('', 'From environment'), 'default': ('', 'Default')} %}
 
 <header class="page-header">
@@ -18,6 +21,10 @@
   <div><div class="label">STARTTLS</div><div class="value">
     {% if tls %}<span class="badge success">{{ icon('lock', 12) }} Enabled</span>
     {% else %}<span class="badge warn">Off</span><span class="hint" style="font-weight:400">set TLS_CERT_PATH + TLS_KEY_PATH</span>{% endif %}</div></div>
+  <div><div class="label">Storage used</div><div class="value">
+    {{ used_human }}{% if cap_human %} <span class="muted" style="font-weight:400">of {{ cap_human }}</span>{% endif %}
+    {% if usage_pct is not none %}<span class="badge {{ 'danger' if usage_pct >= 100 else ('warn' if usage_pct >= 80 else 'success') }}">{{ usage_pct }}%</span>{% endif %}
+  </div></div>
   <div><div class="label">Accepting mail for</div><div class="value">
     {% if domains %}<span class="ellipsis" style="max-width:240px">{{ domains }}</span>
     {% else %}<span class="badge warn">{{ icon('alert', 12) }} Any domain</span>{% endif %}</div></div>

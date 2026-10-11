@@ -118,6 +118,35 @@ def _part_bytes(part) -> bytes:
 
 
 # --------------------------------------------------------------------------- #
+# Storage accounting (cap enforced by the SMTP server)
+# --------------------------------------------------------------------------- #
+_usage = {"at": 0.0, "bytes": 0}
+
+
+def storage_used(max_age: float = 5.0) -> int:
+    """Bytes of stored mail (sum of message sizes), cached for a few seconds."""
+    now = time.monotonic()
+    if now - _usage["at"] > max_age:
+        row = db.one("SELECT COALESCE(SUM(size), 0) AS s FROM messages")
+        _usage.update(at=now, bytes=int(row["s"]))
+    return _usage["bytes"]
+
+
+def storage_cap() -> int:
+    """Configured cap in bytes; 0 = unlimited."""
+    return max(config.get_int("MAX_STORAGE_MB"), 0) * 1024 * 1024
+
+
+def storage_full(extra: int = 0) -> bool:
+    cap = storage_cap()
+    return cap > 0 and storage_used() + extra > cap
+
+
+def _usage_changed() -> None:
+    _usage["at"] = 0.0
+
+
+# --------------------------------------------------------------------------- #
 # Store
 # --------------------------------------------------------------------------- #
 def _clean_token(value: str) -> str:
@@ -166,6 +195,7 @@ def store(raw: bytes, *, mail_from: str, rcpt: str, remote_ip: str = "", helo: s
             "INSERT INTO messages_fts(rowid, subject, sender, recipient, body) VALUES(?,?,?,?,?)",
             (mid, subject, f"{from_header} {mail_from}", rcpt, text[:200_000]),
         )
+    _usage_changed()
     return mid
 
 
@@ -264,6 +294,7 @@ def delete(ids: list[int]) -> int:
         except FileNotFoundError:
             pass
         count += 1
+    _usage_changed()
     return count
 
 

@@ -168,9 +168,13 @@ label.field .hint, .hint { font-weight: 400; color: var(--muted); font-size: 12.
 .msg-row.unread::before { content: ""; position: absolute; left: 5px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--brand); }
 .msg-row .rcpt { justify-self: end; max-width: 100%; }
 .msg-row time { color: var(--muted); font-size: 12.5px; text-align: right; }
-.msg-row .stretch { position: absolute; inset: 0; z-index: 0; }
-.msg-row > * { position: relative; z-index: 1; }
-.msg-row > .stretch { position: absolute; z-index: 0; }
+/* The whole row is one link: the .stretch anchor covers it, the visible content sits above it
+   but lets clicks through, so clicking anywhere on the row (even on text) opens the message.
+   Only the checkbox stays interactive. */
+.msg-row > .stretch { position: absolute; inset: 0; z-index: 0; }
+.msg-row > *:not(.stretch) { position: relative; z-index: 1; pointer-events: none; }
+.msg-row > input.sel { pointer-events: auto; z-index: 2; }
+.msg-row:has(.stretch:focus-visible) { outline: 2px solid var(--brand); outline-offset: -2px; }
 .pager { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--border); color: var(--muted); }
 .empty { padding: 56px 24px; text-align: center; color: var(--muted); }
 .empty .ico { width: 52px; height: 52px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border);

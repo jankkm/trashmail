@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115", "uvicorn[standard]>=0.30", "jinja2>=3.1", "python-multipart>=0.0.9",
   "aiosmtpd>=1.4.6", "aiosmtplib>=3.0", "argon2-cffi>=23.1", "itsdangerous>=2.2",
-  "nh3>=0.2.18", "dkimpy>=1.1.8", "pyspf>=2.0.14", "dnspython>=2.6",
+  "nh3>=0.2.18", "dkimpy>=1.1.8", "pyspf>=2.0.14", "dnspython>=2.6", "segno>=1.6",
 ]
 
 [project.optional-dependencies]

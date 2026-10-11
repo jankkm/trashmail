@@ -49,6 +49,12 @@ Remember: runtime settings in `.env` only *seed* the database on first start (se
 
 Notes on port 25: many cloud providers block inbound/outbound 25 by default. Inbound is what you need.
 
+**Check the real client IP.** The per-IP rate and connection limits and SPF checks need the sender's real
+address. Send a test mail from another machine and look at *Client IP* in the message details. On Linux with
+Docker's default networking it is preserved; Docker Desktop/OrbStack and some IPv6 setups show the NAT
+gateway (e.g. `192.168.x.1`), in which case the per-IP limits apply to everyone together (use host
+networking or fix the IPv6 proxying).
+
 ---------------------------------------------------------------------------------------------------
 
 ## Releasing (GitHub Container Registry)
@@ -144,14 +150,36 @@ the DB has no value for them yet**. After that the database value always wins an
 | Variable | Default | Meaning |
 |---|---|---|
 | `LOCAL_DOMAINS` | *empty = accept all* | Comma list of domains to accept; `*.example.com` = subdomains. Others get `550` at `RCPT TO` |
-| `MAX_MESSAGE_SIZE` | `26214400` | Bytes. Raising it needs a restart (SMTP-level limit is fixed at start) |
-| `RATE_LIMIT_PER_IP` | `30` | Messages per IP per minute (`450` beyond). `0` = off |
 | `SPF_REJECT` | `false` | Reject with `550` when SPF = fail |
-| `RETENTION_DAYS` | `0` | Delete unflagged mail older than N days. `0` = forever |
+| `MAX_MESSAGE_SIZE` | `26214400` | Bytes. Larger gets `552`. Raising it needs a restart |
+| `MAX_RECIPIENTS` | `10` | Recipients per message; further `RCPT TO` get `452`. Each recipient stores its own copy |
+| `RATE_LIMIT_PER_IP` | `30` | Messages per IP per minute (`450` beyond) |
+| `MAX_CONNECTIONS` / `MAX_CONNECTIONS_PER_IP` | `50` / `5` | Concurrent connections; further ones get `421` and are closed |
+| `COMMAND_LIMIT` | `50` | Uses of any one SMTP command per session; the session is dropped beyond. Needs a restart |
+| `RETENTION_DAYS` | `30` | Delete unflagged mail older than N days |
+| `MAX_STORAGE_MB` | `5120` | Storage cap. At the cap new mail is refused with `452` until space is freed |
 | `FORWARD_SMTP_HOST` / `_PORT` | – / `587` | Outbound SMTP account used for forwarding |
 | `FORWARD_SMTP_SECURITY` | `starttls` | `starttls`, `ssl` or `none` |
 | `FORWARD_SMTP_USER` / `FORWARD_SMTP_PASSWORD` | – | Credentials (password is write-only in the UI) |
 | `FORWARD_FROM` | SMTP user | From address of forwarded mail |
+| `FORWARD_LIMIT_PER_HOUR` | `60` | Forwards triggered by *rules* per hour. Beyond it the mail is stored but not forwarded (logged as failed hit) |
+
+`0` disables a limit. Defaults are chosen for an internet-facing MX; the storage figure is the sum of stored
+message sizes (not free disk space), so size your volume above `MAX_STORAGE_MB` plus the database.
+
+### Two-factor authentication (TOTP)
+
+Optional, per user: *Account → Two-factor authentication*. Scan the QR code with any authenticator app
+(Google Authenticator, 1Password, Aegis, …), confirm with a code, and save the 8 one-time recovery codes
+that are shown once. At sign-in the password is followed by a code (or a recovery code).
+
+* Standard RFC 6238 (SHA-1, 6 digits, 30 s, ±1 step drift). A code can be used only once.
+* The second step is only reachable with a 5-minute signed "password accepted" cookie; 5 wrong codes lock
+  that account's second step for 15 minutes, and failures count towards the per-IP login throttle.
+* Admins can *Reset 2FA* for a user on the Users page (lost phone and recovery codes). Disabling needs the
+  user's password.
+* The TOTP secret is stored in the SQLite database in clear text (it must be readable to verify codes);
+  protect `/data` accordingly. Recovery codes are stored only as SHA-256 hashes.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -172,8 +200,8 @@ the DB has no value for them yet**. After that the database value always wins an
 * **One process**: `app/main.py` runs uvicorn; the SMTP controller (own thread) and the hourly
   retention task are started in the FastAPI lifespan (`app/web/app.py`).
 * **SQLite**: a short-lived connection per call (WAL) in `app/db.py`; there is no ORM. Schema is
-  `CREATE TABLE IF NOT EXISTS` in `db.SCHEMA` — **if you change a table, add a migration step in
-  `db.init()`** (none exist yet).
+  `CREATE TABLE IF NOT EXISTS` in `db.SCHEMA`. That never alters an existing table, so **when you add a
+  column, also append it to `db.MIGRATIONS`** (applied by `db.init()` on every start).
 * **Per-recipient copies**: a mail to 3 local recipients is stored 3 times, so each copy can be
   flagged/deleted/ruled independently. Simple on purpose.
 * **Forwarding** sends a *new* message from the configured SMTP account with the original attached as
@@ -186,9 +214,14 @@ the DB has no value for them yet**. After that the database value always wins an
   `<iframe sandbox>` with a strict CSP (`default-src 'none'; img-src data:`). `cid:` images are inlined
   as data URIs. The *Load external resources* button just reloads the iframe with `?external=1`, which
   relaxes only `img-src`/`style-src`/`font-src`/`media-src`. Scripts never run.
-* **Security basics**: argon2 password hashes, signed `HttpOnly`/`SameSite=Lax` session cookie, CSRF
-  token on every POST (`verify_csrf`), login throttling per IP (in memory), admin-only pages guarded by
-  the `admin_user` dependency, secrets never rendered back into forms.
+* **Security basics**: argon2 password hashes, signed `HttpOnly`/`SameSite=Lax` session cookie, optional
+  TOTP second factor, CSRF token on every POST (`verify_csrf`; the login steps have none because there is
+  no session yet), login throttling per IP (in memory), admin-only pages guarded by the `admin_user`
+  dependency, secrets never rendered back into forms.
+* **Abuse protection** (`app/smtp_server.py`): connection limits are enforced in `LimitedSMTP.connection_made`
+  (a subclass wired in through `LimitedController.factory`), the per-session command limit is aiosmtpd's
+  `command_call_limit`, recipient/storage/rate limits are checked in the `handle_*` hooks, the hourly
+  forward cap in `deliver()`. Storage use is `SUM(messages.size)`, cached for 5 s (`mailstore.storage_used`).
 
 ## Project layout
 
@@ -253,6 +286,6 @@ Each test gets a fresh temporary `DATA_DIR` (`tests/conftest.py`).
 * No IMAP/POP3, no outbound relaying, no per-user mailboxes: all users see all mail (rules are shared).
 * Rate limiting and login throttling are in-memory (reset on restart, per process).
 * DMARC check is a simplified alignment check (relaxed, approximated organisational domain).
-* No DB migrations framework yet (see above). No i18n.
+* Migrations are a simple list of added columns (`db.MIGRATIONS`); there is no framework. No i18n.
 * Ideas not built yet: disposable aliases with expiry, push notification/webhook on new mail,
-  API tokens + JSON API, ClamAV scanning, `.eml` import, TOTP 2FA, SRS / DKIM-signed forwarding.
+  API tokens + JSON API, ClamAV scanning, `.eml` import, WebAuthn/passkeys, SRS / DKIM-signed forwarding.

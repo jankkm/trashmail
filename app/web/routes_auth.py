@@ -7,7 +7,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, db
+from .. import auth, config, db, totp
 from .deps import back, current_user, render, session, verify_csrf
 
 router = APIRouter()
@@ -37,12 +37,59 @@ def login(request: Request, username: str = Form(""), password: str = Form("")):
     if user is None:
         _failures[ip].append(time.time())
         return render(request, "login.html", status_code=401, err="Wrong username or password", username=username)
-    from .. import config
+    if user["totp_enabled"]:
+        response = RedirectResponse("/login/2fa", status_code=303)
+        response.set_cookie(
+            auth.PENDING_COOKIE, auth.make_pending(user["id"]), max_age=auth.PENDING_MAX_AGE,
+            httponly=True, samesite="lax", secure=config.boot().cookie_secure)
+        return response
+    return _finish_login(user["id"])
+
+
+def _finish_login(user_id: int) -> RedirectResponse:
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
-        auth.COOKIE, auth.make_session(user["id"]), max_age=auth.SESSION_MAX_AGE,
+        auth.COOKIE, auth.make_session(user_id), max_age=auth.SESSION_MAX_AGE,
         httponly=True, samesite="lax", secure=config.boot().cookie_secure)
+    response.delete_cookie(auth.PENDING_COOKIE)
     return response
+
+
+# Second login step: only reachable with the short-lived pending cookie set after the password.
+_2fa_failures: dict[int, list[float]] = defaultdict(list)
+MAX_2FA_FAILURES, WINDOW_2FA = 5, 900
+
+
+def _2fa_locked(uid: int) -> bool:
+    now = time.time()
+    _2fa_failures[uid] = [t for t in _2fa_failures[uid] if now - t < WINDOW_2FA]
+    return len(_2fa_failures[uid]) >= MAX_2FA_FAILURES
+
+
+@router.get("/login/2fa", response_class=HTMLResponse)
+def login_2fa_form(request: Request):
+    uid = auth.read_pending(request.cookies.get(auth.PENDING_COOKIE))
+    if uid is None:
+        return RedirectResponse("/login", status_code=303)
+    return render(request, "login_2fa.html")
+
+
+@router.post("/login/2fa")
+def login_2fa(request: Request, code: str = Form("")):
+    uid = auth.read_pending(request.cookies.get(auth.PENDING_COOKIE))
+    user = auth.get_user(uid) if uid else None
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    ip = request.client.host if request.client else "?"
+    if _throttled(ip) or _2fa_locked(uid):
+        return render(request, "login_2fa.html", status_code=429,
+                      err="Too many attempts. Wait a few minutes and sign in again.")
+    if not auth.check_second_factor(user, code):
+        _failures[ip].append(time.time())
+        _2fa_failures[uid].append(time.time())
+        return render(request, "login_2fa.html", status_code=401, err="That code is not valid")
+    _2fa_failures.pop(uid, None)
+    return _finish_login(uid)
 
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])
@@ -68,3 +115,38 @@ def account_save(name: str = Form(""), current: str = Form(""), new_password: st
         db.execute("UPDATE users SET password_hash=? WHERE id=?", (auth.hash_password(new_password), user["id"]))
     db.execute("UPDATE users SET name=? WHERE id=?", (name.strip(), user["id"]))
     return back("/account", ok="Saved")
+
+
+# --- two-factor authentication management ---------------------------------------------------- #
+@router.get("/account/2fa", response_class=HTMLResponse)
+def twofa_page(request: Request, user=Depends(current_user)):
+    ctx: dict = {"nav": "account", "enabled": bool(user["totp_enabled"]),
+                 "codes_left": auth.recovery_codes_left(user)}
+    if not user["totp_enabled"] and user["totp_secret"]:
+        uri = totp.provisioning_uri(user["totp_secret"], user["username"])
+        ctx.update(pending=True, qr=totp.qr_svg(uri), secret=totp.format_secret(user["totp_secret"]))
+    return render(request, "twofa.html", **ctx)
+
+
+@router.post("/account/2fa/start", dependencies=[Depends(verify_csrf)])
+def twofa_start(user=Depends(current_user)):
+    if not user["totp_enabled"]:
+        auth.totp_start_setup(user["id"])
+    return back("/account/2fa")
+
+
+@router.post("/account/2fa/enable", dependencies=[Depends(verify_csrf)])
+def twofa_enable(request: Request, code: str = Form(""), user=Depends(current_user)):
+    codes = auth.totp_confirm(user["id"], code)
+    if codes is None:
+        return back("/account/2fa", err="That code is not valid. Check the time on your phone and try again.")
+    return render(request, "twofa.html", nav="account", enabled=True, new_codes=codes,
+                  codes_left=len(codes))
+
+
+@router.post("/account/2fa/disable", dependencies=[Depends(verify_csrf)])
+def twofa_disable(password: str = Form(""), user=Depends(current_user)):
+    if not auth.verify_password(user["password_hash"], password):
+        return back("/account/2fa", err="Wrong password")
+    auth.totp_disable(user["id"])
+    return back("/account/2fa", ok="Two-factor authentication disabled")

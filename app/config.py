@@ -121,15 +121,31 @@ SETTING_LIST: tuple[Setting, ...] = (
             "Comma separated domains this server accepts mail for. '*.example.com' matches subdomains. "
             "Empty = accept every domain (it never relays, but you will receive junk for any name).",
             group="Receiving"),
-    Setting("MAX_MESSAGE_SIZE", "26214400", "Max message size (bytes)",
-            "Larger messages are rejected. Raising it needs an app restart.", "int", group="Receiving"),
-    Setting("RATE_LIMIT_PER_IP", "30", "Max messages per IP per minute",
-            "Further attempts get a temporary 450. 0 = unlimited.", "int", group="Receiving"),
     Setting("SPF_REJECT", "false", "Reject on SPF fail",
             "Reject messages whose SPF result is 'fail' with a 550. SPF/DKIM/DMARC results are always shown.",
             "bool", group="Receiving"),
-    Setting("RETENTION_DAYS", "0", "Delete mail after N days",
-            "0 = keep forever. Flagged mail is never auto-deleted.", "int", group="Storage"),
+
+    Setting("MAX_MESSAGE_SIZE", "26214400", "Max message size",
+            "Larger messages are rejected (552). Raising it needs an app restart.", "int", group="Limits"),
+    Setting("MAX_RECIPIENTS", "10", "Max recipients per message",
+            "Further RCPT TO commands get 452. Every recipient stores its own copy of the message.",
+            "int", group="Limits"),
+    Setting("RATE_LIMIT_PER_IP", "30", "Messages per IP per minute",
+            "Further attempts get a temporary 450. 0 = unlimited.", "int", group="Limits"),
+    Setting("MAX_CONNECTIONS", "50", "Max concurrent connections",
+            "Further connections are refused with 421. 0 = unlimited.", "int", group="Limits"),
+    Setting("MAX_CONNECTIONS_PER_IP", "5", "Max concurrent connections per IP",
+            "0 = unlimited. Needs the real client IP (see README on Docker networking).", "int", group="Limits"),
+    Setting("COMMAND_LIMIT", "50", "Max commands per session",
+            "Each SMTP command (MAIL, RCPT, NOOP, ...) may be used this often per connection. "
+            "0 = unlimited. Needs an app restart.", "int", group="Limits"),
+
+    Setting("RETENTION_DAYS", "30", "Delete mail after",
+            "Unflagged mail older than this is deleted. 0 = keep forever.", "int", group="Storage"),
+    Setting("MAX_STORAGE_MB", "5120", "Storage cap",
+            "When stored mail reaches this size new mail is refused with 452 until space is freed. "
+            "0 = unlimited.", "int", group="Storage"),
+
     Setting("FORWARD_SMTP_HOST", "", "Forwarding SMTP host",
             "Outbound SMTP account used for forwarding.", group="Forwarding"),
     Setting("FORWARD_SMTP_PORT", "587", "Forwarding SMTP port", kind="int", group="Forwarding"),
@@ -140,6 +156,9 @@ SETTING_LIST: tuple[Setting, ...] = (
             "Write-only; leave blank to keep the current value.", secret=True, group="Forwarding"),
     Setting("FORWARD_FROM", "", "Forwarding From address",
             "Defaults to the SMTP user if empty.", group="Forwarding"),
+    Setting("FORWARD_LIMIT_PER_HOUR", "60", "Max rule forwards per hour",
+            "Protects your SMTP account from being flooded through a forward rule. "
+            "Beyond the limit the mail is still stored. 0 = unlimited.", "int", group="Forwarding"),
 )
 SETTINGS: dict[str, Setting] = {s.key: s for s in SETTING_LIST}
 

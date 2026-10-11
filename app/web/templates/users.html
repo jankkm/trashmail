@@ -18,9 +18,16 @@
           <div><b>{{ u.name or u.username }}</b>{% if u.id == user.id %} <span class="badge">You</span>{% endif %}<div class="muted">@{{ u.username }}</div></div>
         </div>
       </td>
-      <td>{% if u.is_admin %}<span class="badge success">{{ icon('shield', 12) }} Administrator</span>{% else %}<span class="badge">User</span>{% endif %}</td>
+      <td>{% if u.is_admin %}<span class="badge success">{{ icon('shield', 12) }} Administrator</span>{% else %}<span class="badge">User</span>{% endif %}
+        {% if u.totp_enabled %}<span class="badge info" title="Two-factor authentication enabled">{{ icon('lock', 12) }} 2FA</span>{% endif %}</td>
       <td class="muted nowrap">{{ u.created_at|dt }}</td>
       <td class="right nowrap">
+        {% if u.totp_enabled and u.id != user.id %}
+        <form method="post" action="/users/{{ u.id }}/reset-2fa" style="display:inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn sm" data-confirm="Remove two-factor authentication for {{ u.username }}? They can set it up again after signing in.">Reset 2FA</button>
+        </form>
+        {% endif %}
         <button class="btn sm" data-open="edit-{{ u.id }}">{{ icon('pencil', 14) }} Edit</button>
         {% if u.id != user.id %}
         <form method="post" action="/users/{{ u.id }}/delete" style="display:inline">

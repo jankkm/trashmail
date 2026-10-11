@@ -1,9 +1,11 @@
 """Receiving SMTP server (aiosmtpd).
 
-Policy is enforced during the dialogue so rejected mail gets a real 5xx:
-  MAIL FROM : sender blacklist, per-IP rate limit
-  RCPT TO   : local-domain allow list, recipient blacklist
-  DATA      : size limit, SPF reject (optional), then rules and storage
+Policy is enforced during the dialogue so rejected mail gets a real 4xx/5xx:
+  connect   : global and per-IP concurrent connection limits (421)
+  commands  : per-session command limit (aiosmtpd command_call_limit)
+  MAIL FROM : storage cap (452), sender blacklist, per-IP rate limit
+  RCPT TO   : local-domain allow list, recipient blacklist, recipient limit (452)
+  DATA      : size limit, storage cap, SPF reject (optional), then rules and storage
 This server never relays; accepted mail is only stored locally.
 """
 from __future__ import annotations
@@ -15,12 +17,76 @@ import time
 from collections import defaultdict, deque
 
 from aiosmtpd.controller import Controller
+from aiosmtpd.smtp import SMTP
 
 from . import config, forwarder, mailstore, rules, security_checks
 
 log = logging.getLogger(__name__)
 
 
+# --------------------------------------------------------------------------- #
+# Connection limits
+# --------------------------------------------------------------------------- #
+class ConnectionTracker:
+    """Counts open connections. Only touched from the SMTP event-loop thread."""
+
+    def __init__(self) -> None:
+        self.total = 0
+        self.per_ip: dict[str, int] = defaultdict(int)
+
+    def acquire(self, ip: str) -> bool:
+        max_total = config.get_int("MAX_CONNECTIONS")
+        max_ip = config.get_int("MAX_CONNECTIONS_PER_IP")
+        if max_total > 0 and self.total >= max_total:
+            return False
+        if max_ip > 0 and self.per_ip[ip] >= max_ip:
+            return False
+        self.total += 1
+        self.per_ip[ip] += 1
+        return True
+
+    def release(self, ip: str) -> None:
+        self.total = max(self.total - 1, 0)
+        self.per_ip[ip] -= 1
+        if self.per_ip[ip] <= 0:
+            self.per_ip.pop(ip, None)
+
+
+class LimitedSMTP(SMTP):
+    """SMTP protocol that refuses connections beyond the configured limits."""
+
+    tracker: ConnectionTracker
+
+    def connection_made(self, transport) -> None:
+        peer = transport.get_extra_info("peername")
+        self._tm_ip = peer[0] if peer else ""
+        self._tm_counted = self.tracker.acquire(self._tm_ip)
+        if not self._tm_counted:
+            log.info("connection from %s refused (limit reached)", self._tm_ip)
+            transport.write(b"421 4.7.0 Too many connections, try again later\r\n")
+            transport.close()
+            return
+        super().connection_made(transport)
+
+    def connection_lost(self, error) -> None:
+        if not getattr(self, "_tm_counted", False):
+            return
+        self.tracker.release(self._tm_ip)
+        super().connection_lost(error)
+
+
+class LimitedController(Controller):
+    tracker = ConnectionTracker()
+
+    def factory(self):
+        smtp = LimitedSMTP(self.handler, **self.SMTP_kwargs)
+        smtp.tracker = self.tracker
+        return smtp
+
+
+# --------------------------------------------------------------------------- #
+# Policy handler
+# --------------------------------------------------------------------------- #
 class Handler:
     def __init__(self) -> None:
         self._hits: dict[str, deque] = defaultdict(deque)
@@ -43,6 +109,9 @@ class Handler:
 
     async def handle_MAIL(self, server, session, envelope, address, mail_options):
         ip = session.peer[0] if session.peer else ""
+        if mailstore.storage_full():
+            log.warning("storage cap reached, refusing mail from %s", ip)
+            return "452 4.3.1 Insufficient system storage, try again later"
         if self._rate_limited(ip):
             return "450 4.7.1 Too many messages from your address, try again later"
         hit = rules.blacklisted(address, sender=True)
@@ -61,6 +130,9 @@ class Handler:
         if hit:
             log.info("rejected recipient %s (%s)", address, hit)
             return "550 5.1.1 Recipient rejected by policy"
+        limit = config.get_int("MAX_RECIPIENTS")
+        if limit > 0 and len(envelope.rcpt_tos) >= limit:
+            return "452 4.5.3 Too many recipients"
         envelope.rcpt_tos.append(address)
         envelope.rcpt_options.extend(rcpt_options)
         return "250 OK"
@@ -69,6 +141,9 @@ class Handler:
         raw: bytes = envelope.content if isinstance(envelope.content, bytes) else envelope.content.encode()
         if len(raw) > config.get_int("MAX_MESSAGE_SIZE"):
             return "552 5.3.4 Message too big"
+        # every recipient gets its own stored copy
+        if mailstore.storage_full(len(raw) * max(len(envelope.rcpt_tos), 1)):
+            return "452 4.3.1 Insufficient system storage, try again later"
         ip = session.peer[0] if session.peer else ""
         mail_from = envelope.mail_from or ""
         auth = await asyncio.to_thread(
@@ -110,6 +185,12 @@ async def deliver(raw: bytes, *, mail_from: str, rcpt: str, ip: str = "", helo: 
             if already_forwarded:
                 rules.log_hit(rule, message_id=mid, ctx=ctx, detail="skipped: loop protection", ok=False)
                 continue
+            limit = config.get_int("FORWARD_LIMIT_PER_HOUR")
+            if limit > 0 and rules.forwards_last_hour() >= limit:
+                log.warning("forward limit of %s/hour reached, not forwarding", limit)
+                rules.log_hit(rule, message_id=mid, ctx=ctx, ok=False,
+                              detail=f"skipped: hourly forward limit ({limit}) reached")
+                continue
             try:
                 await forwarder.forward_raw(
                     rule["action_arg"], raw, subject=ctx.subject,
@@ -136,15 +217,18 @@ def _tls_context() -> ssl.SSLContext | None:
 def start(host: str | None = None, port: int | None = None) -> Controller:
     boot = config.boot()
     tls = _tls_context()
-    controller = Controller(
+    command_limit = config.get_int("COMMAND_LIMIT")
+    controller = LimitedController(
         Handler(),
         hostname=host or boot.smtp_host,
         port=port if port is not None else boot.smtp_port,
         tls_context=tls,
         require_starttls=False,
         data_size_limit=config.get_int("MAX_MESSAGE_SIZE") + 4096,
+        command_call_limit=command_limit if command_limit > 0 else None,
         ident="Trashmail ESMTP",
     )
+    controller.tracker = ConnectionTracker()  # fresh counters per server instance
     controller.start()
     log.info("SMTP listening on %s:%s (STARTTLS %s)", controller.hostname, controller.port,
              "on" if tls else "off")

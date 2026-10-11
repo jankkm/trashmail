@@ -31,4 +31,4 @@ def test_typed_getters(monkeypatch):
     assert config.get_int("RETENTION_DAYS") == 14
     assert config.get_bool("SPF_REJECT") is True
     monkeypatch.setenv("RETENTION_DAYS", "nope")
-    assert config.get_int("RETENTION_DAYS") == 0
+    assert config.get_int("RETENTION_DAYS") == 30   # invalid value falls back to the default (30 days)

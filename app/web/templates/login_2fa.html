@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Two-factor authentication · Trashmail{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  {% include "logo.html" %}
+  <h1>Two-factor authentication</h1>
+  <p class="sub">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
+  <form method="post" action="/login/2fa" class="stack">
+    <label class="field">Code
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" autofocus required
+             placeholder="123 456" style="text-align:center;font-size:20px;letter-spacing:.15em;height:46px">
+    </label>
+    <button class="btn primary block">Verify and sign in</button>
+    <a class="link" href="/login" style="text-align:center">Back to sign in</a>
+  </form>
+</div>
+{% endblock %}

@@ -121,3 +121,69 @@ def test_block_from_message_and_rule_with_next(client):
                                     "action": "flag", "next": "//evil.test"})
     assert r.headers["location"].startswith("/rules?ok=")
     assert db.one("SELECT scope FROM rules WHERE value='alice@sender.test'")["scope"] == "bob@example.test"
+
+
+def test_two_factor_login_flow(client):
+    import re
+    from app import config, totp
+    token = login(client)
+    client.post("/account/2fa/start", data={"csrf": token})
+    me = auth.authenticate("admin", "adminpass1")
+    secret = auth.get_user(me["id"])["totp_secret"]
+    assert secret and "Verify and enable" in client.get("/account/2fa").text
+    # wrong code keeps it off, right code enables and shows recovery codes once
+    r = client.post("/account/2fa/enable", data={"csrf": token, "code": "000000"})
+    assert r.status_code == 303 and "err=" in r.headers["location"]
+    r = client.post("/account/2fa/enable", data={"csrf": token, "code": totp.code_at(secret, totp.current_step())})
+    assert r.status_code == 200
+    recovery = re.findall(r"\b[a-z2-9]{5}-[a-z2-9]{5}\b", r.text)
+    assert len(recovery) == 8
+    assert secret not in client.get("/account/2fa").text            # secret is no longer displayed
+
+    # password alone no longer gives a session
+    client.cookies.clear()
+    r = client.post("/login", data={"username": "admin", "password": "adminpass1"})
+    assert r.headers["location"] == "/login/2fa"
+    assert client.get("/", follow_redirects=False).headers["location"] == "/login"
+    r = client.post("/login/2fa", data={"code": "123456"})
+    assert r.status_code == 401
+    code = totp.code_at(secret, totp.current_step() + 1)
+    r = client.post("/login/2fa", data={"code": code})
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert client.get("/").status_code == 200
+
+    # the same TOTP code cannot be replayed; a recovery code works once
+    client.cookies.clear()
+    client.post("/login", data={"username": "admin", "password": "adminpass1"})
+    assert client.post("/login/2fa", data={"code": code}).status_code == 401
+    assert client.post("/login/2fa", data={"code": recovery[0]}).status_code == 303
+    client.cookies.clear()
+    client.post("/login", data={"username": "admin", "password": "adminpass1"})
+    assert client.post("/login/2fa", data={"code": recovery[0]}).status_code == 401
+
+
+def test_two_factor_pending_cookie_required_and_lockout(client):
+    from app import totp
+    from app.web import routes_auth
+    routes_auth._failures.clear(); routes_auth._2fa_failures.clear()
+    uid = auth.create_user("dave", "password123")
+    secret = auth.totp_start_setup(uid)
+    auth.totp_confirm(uid, totp.code_at(secret, totp.current_step()))
+    assert client.get("/login/2fa").headers["location"] == "/login"              # no pending cookie
+    assert client.post("/login/2fa", data={"code": "123456"}).headers["location"] == "/login"
+    client.post("/login", data={"username": "dave", "password": "password123"})
+    for _ in range(5):
+        assert client.post("/login/2fa", data={"code": "000000"}).status_code == 401
+    assert client.post("/login/2fa", data={"code": totp.code_at(secret, totp.current_step() + 1)}).status_code == 429
+
+
+def test_admin_can_reset_two_factor(client):
+    from app import totp
+    token = login(client)
+    uid = auth.create_user("erin", "password123")
+    secret = auth.totp_start_setup(uid)
+    auth.totp_confirm(uid, totp.code_at(secret, totp.current_step()))
+    assert "2FA" in client.get("/users").text
+    r = client.post(f"/users/{uid}/reset-2fa", data={"csrf": token})
+    assert "ok=" in r.headers["location"]
+    assert auth.get_user(uid)["totp_enabled"] == 0

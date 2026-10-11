@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Two-factor authentication · Trashmail{% endblock %}
+{% block content %}
+<a class="back" href="/account">{{ icon('arrow-left', 16) }} Account</a>
+<header class="page-header">
+  <div><h1>Two-factor authentication</h1>
+    <p class="sub">Add a second step at sign-in with a time-based code from an authenticator app.</p></div>
+  <div class="actions">
+    {% if enabled %}<span class="badge success">{{ icon('shield-check', 13) }} Enabled</span>
+    {% else %}<span class="badge">Off</span>{% endif %}
+  </div>
+</header>
+
+{% if new_codes %}
+<section class="card" style="max-width:640px">
+  <div class="card-header"><span class="ico">{{ icon('check', 18) }}</span>
+    <div><h2>Two-factor authentication is on</h2><p>Save your recovery codes now. They are shown only once.</p></div></div>
+  <div class="card-body stack">
+    <div class="grid-2" style="font-family:var(--mono);font-size:15px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px">
+      {% for c in new_codes %}<div>{{ c }}</div>{% endfor %}
+    </div>
+    <p class="hint">Each code works once if you lose your device. Store them in a password manager.</p>
+    <a class="btn primary" href="/account/2fa" style="justify-self:start">I have saved them</a>
+  </div>
+</section>
+
+{% elif enabled %}
+<section class="card" style="max-width:640px">
+  <div class="card-header"><span class="ico">{{ icon('shield-check', 18) }}</span>
+    <div><h2>Active</h2><p>You will be asked for a code each time you sign in.</p></div></div>
+  <div class="card-body stack">
+    <p class="muted">Unused recovery codes: <b style="color:var(--text)">{{ codes_left }}</b>
+      {% if codes_left <= 2 %}<span class="badge warn">running low: disable and re-enable to generate new ones</span>{% endif %}</p>
+    <form method="post" action="/account/2fa/disable" class="row" style="align-items:end">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="field" style="flex:1 1 240px">Confirm your password to turn it off
+        <input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="btn danger" data-confirm="Disable two-factor authentication?">Disable 2FA</button>
+    </form>
+  </div>
+</section>
+
+{% elif pending %}
+<section class="card" style="max-width:640px">
+  <div class="card-header"><span class="ico">{{ icon('lock', 18) }}</span>
+    <div><h2>Set up your authenticator</h2><p>Scan the code, then enter the 6-digit code it shows.</p></div></div>
+  <div class="card-body">
+    <div class="row" style="align-items:flex-start;gap:28px">
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:8px;background:#fff;line-height:0">{{ qr|safe }}</div>
+      <div class="stack" style="flex:1 1 260px">
+        <div>
+          <div class="hint">Can't scan? Enter this key manually:</div>
+          <div class="mono" style="font-size:15px;letter-spacing:.04em;word-break:break-all;margin-top:4px">{{ secret }}</div>
+        </div>
+        <form method="post" action="/account/2fa/enable" class="stack">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label class="field">6-digit code
+            <input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123 456" required autofocus></label>
+          <button class="btn primary">Verify and enable</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% else %}
+<section class="card" style="max-width:640px">
+  <div class="card-body stack">
+    <p>Works with Google Authenticator, 1Password, Aegis, Authy and any other TOTP app.
+       You will also receive one-time recovery codes in case you lose your device.</p>
+    <form method="post" action="/account/2fa/start">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn primary">{{ icon('shield-check', 16) }} Set up two-factor authentication</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

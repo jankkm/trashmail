@@ -20,4 +20,13 @@
   </div>
   <div class="dialog-foot"><button class="btn primary">Save changes</button></div>
 </form>
+
+<section class="card" style="max-width:560px">
+  <div class="card-header">
+    <span class="ico">{{ icon('shield-check', 18) }}</span>
+    <div class="grow"><h2>Two-factor authentication</h2><p>Protect your account with a code from an authenticator app.</p></div>
+    {% if user.totp_enabled %}<span class="badge success">Enabled</span>{% else %}<span class="badge">Off</span>{% endif %}
+  </div>
+  <div class="card-body"><a class="btn" href="/account/2fa">{{ 'Manage' if user.totp_enabled else 'Set up' }}</a></div>
+</section>
 {% endblock %}
