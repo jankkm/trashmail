@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS rule_actions (         -- 1..n per rule ("then")
     id INTEGER PRIMARY KEY,
     rule_id INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
     position INTEGER NOT NULL DEFAULT 0,
-    action TEXT NOT NULL,             -- flag|mark_read|forward|delete
+    action TEXT NOT NULL,             -- flag|mark_read|tag|forward|redirect|delete
     arg TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_rule_conditions ON rule_conditions(rule_id);
@@ -129,6 +129,7 @@ MIGRATIONS = [
     ("users", "totp_recovery", "TEXT NOT NULL DEFAULT '[]'"),
     ("users", "default_view", "TEXT NOT NULL DEFAULT 'all'"),     # inbox start view: all|unread|flagged
     ("users", "forward_email", "TEXT NOT NULL DEFAULT ''"),       # personal address for one-click forwarding
+    ("users", "forward_mode", "TEXT NOT NULL DEFAULT 'forward'"),  # what the quick button does: forward|redirect
 ]
 
 

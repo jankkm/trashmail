@@ -16,7 +16,7 @@ def cond(field, op, value, header=""):
 
 
 def add(conditions, actions=("flag",), scope=None, **kw):
-    acts = [{"action": a, "arg": "me@x.test" if a == "forward" else ""} for a in actions]
+    acts = [{"action": a, "arg": "me@x.test" if a in ("forward", "redirect") else ""} for a in actions]
     return rules.create_rule(conditions=conditions, actions=acts, scope=scope, **kw)
 
 
@@ -144,3 +144,10 @@ def test_domain_allowed():
     assert rules.domain_allowed("a.lists.test")
     assert not rules.domain_allowed("lists.test")
     assert not rules.domain_allowed("other.test")
+
+
+def test_redirect_action_needs_an_address():
+    with pytest.raises(rules.RuleError):
+        rules.create_rule(conditions=[], actions=[{"action": "redirect", "arg": "nope"}])
+    rid = add([], actions=("redirect",))
+    assert rules.get_rule(rid)["actions"][0] == {**rules.get_rule(rid)["actions"][0], "action": "redirect", "arg": "me@x.test"}

@@ -350,7 +350,7 @@ details.global-rules[open] summary { border-bottom: 1px solid var(--border); }
 .clause .lbl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .rule-text .join { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--faint); padding: 0 2px; }
 .rule-text .tok.act.mark_read { background: var(--info-tint); color: var(--info); }
-.rule-text .tok.act.forward { background: var(--info-tint); color: var(--info); }
+.rule-text .tok.act.forward, .rule-text .tok.act.redirect { background: var(--info-tint); color: var(--info); }
 .rule-ctl { display: flex; align-items: center; gap: 4px; flex: none; }
 .rule-ctl form { display: flex; }
 aside .rule { flex-wrap: wrap; padding: 14px 16px; }
@@ -418,3 +418,13 @@ a.tag:hover { background: hsl(var(--h) 70% 50% / .24); }
 .msg-row > button.star.on { color: #f59e0b; }
 .msg-row > button.star.on svg { fill: currentColor; }
 .msg-row > button.star:active svg { transform: scale(.85); }
+
+/* ---- account page ---------------------------------------------------------------------------- */
+.account { display: grid; gap: 20px; max-width: 760px; }
+.choice-list { gap: 8px; }
+.choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+          cursor: pointer; background: var(--surface); }
+.choice:has(input:checked) { border-color: var(--brand); background: var(--brand-tint); }
+.choice input { margin-top: 3px; width: auto; }
+.choice b { display: block; font-weight: 600; }
+.choice small { display: block; color: var(--muted); font-size: 12.5px; }

@@ -170,3 +170,35 @@ async def test_one_rule_runs_several_actions_in_one_delivery():
     row = mailstore.get(mid)
     assert row["flagged"] == 1 and row["is_read"] == 1
     assert [h["action"] for h in db.query("SELECT action FROM rule_hits ORDER BY id")] == ["flag", "mark_read"]
+
+
+async def test_redirect_rule_sends_message_unchanged(monkeypatch):
+    from app import forwarder, rules
+    sent = []
+
+    async def fake_send_bytes(raw, *, sender, recipient):
+        sent.append((raw, sender, recipient))
+    monkeypatch.setattr(forwarder, "_send_bytes", fake_send_bytes)
+    config.set_value("FORWARD_SMTP_HOST", "smtp.test")
+    config.set_value("FORWARD_FROM", "trash@example.test")
+    rules.create_rule(conditions=[{"field": "subject", "op": "contains", "value": "invoice"}],
+                      actions=[{"action": "redirect", "arg": "me@x.test"}])
+    await smtp_server.deliver(SAMPLE, mail_from="alice@sender.test", rcpt="bob@example.test")
+    (raw, sender, recipient), = sent
+    assert raw.endswith(SAMPLE)                              # original bytes untouched, only headers prepended
+    assert raw.startswith(b"Resent-Date: ") and b"Resent-To: me@x.test" in raw.split(SAMPLE[:20])[0]
+    assert (sender, recipient) == ("trash@example.test", "me@x.test")
+    assert db.one("SELECT * FROM rule_hits ORDER BY id DESC LIMIT 1")["detail"] == "redirected to me@x.test"
+    # redirected mail is marked: a second hop is never redirected again
+    sent.clear()
+    await smtp_server.deliver(raw, mail_from="alice@sender.test", rcpt="bob@example.test")
+    assert sent == []
+    assert "loop" in db.one("SELECT * FROM rule_hits ORDER BY id DESC LIMIT 1")["detail"]
+
+
+async def test_redirect_counts_against_forward_cap():
+    import time
+    from app import rules
+    rid = rules.create_rule(conditions=[], actions=[{"action": "redirect", "arg": "me@x.test"}])
+    db.execute("INSERT INTO rule_hits(at,rule_id,action,ok) VALUES(?,?,?,1)", (int(time.time()), rid, "redirect"))
+    assert rules.forwards_last_hour() == 1

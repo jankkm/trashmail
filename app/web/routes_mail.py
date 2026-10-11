@@ -95,26 +95,34 @@ def attachment(mid: int, idx: int, user=Depends(current_user)):
 
 
 @router.post("/messages/{mid}/forward", dependencies=[Depends(verify_csrf)])
-async def forward(request: Request, mid: int, to: str = Form(""), user=Depends(current_user)):
-    """Forward to `to`, or to the address in the user's profile when `to` is empty.
+async def forward(request: Request, mid: int, to: str = Form(""), mode: str = Form(""),
+                  user=Depends(current_user)):
+    """Forward (attachment) or redirect (unchanged) to `to`, or to the address in the user's profile when
+    `to` is empty. `mode` defaults to the user's profile choice.
     With `X-Requested-With: fetch` the answer is JSON so the page can stay where it is."""
     row = _row_or_404(mid)
     to = to.strip() or (user["forward_email"] or "")
+    if mode not in rules.OUTBOUND:
+        mode = user["forward_mode"] if user["forward_mode"] in rules.OUTBOUND else "forward"
     wants_json = request.headers.get("x-requested-with") == "fetch"
     try:
         if not to:
             raise forwarder.ForwardError("No forwarding address: enter one or add it to your account")
-        await forwarder.forward_raw(
-            to, mailstore.read_raw(row), subject=row["subject"],
-            summary=(f"Forwarded from Trashmail\nOriginal sender: {row['from_header'] or row['mail_from']}\n"
-                     f"Received for: {row['rcpt_to']}\nSubject: {row['subject']}\n"))
+        if mode == "redirect":
+            await forwarder.redirect_raw(to, mailstore.read_raw(row))
+        else:
+            await forwarder.forward_raw(
+                to, mailstore.read_raw(row), subject=row["subject"],
+                summary=(f"Forwarded from Trashmail\nOriginal sender: {row['from_header'] or row['mail_from']}\n"
+                         f"Received for: {row['rcpt_to']}\nSubject: {row['subject']}\n"))
     except forwarder.ForwardError as exc:
         if wants_json:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
         return back(f"/messages/{mid}", err=str(exc))
+    done = f"{'Redirected' if mode == 'redirect' else 'Forwarded'} to {to}"
     if wants_json:
-        return JSONResponse({"ok": True, "message": f"Forwarded to {to}"})
-    return back(f"/messages/{mid}", ok=f"Forwarded to {to}")
+        return JSONResponse({"ok": True, "message": done})
+    return back(f"/messages/{mid}", ok=done)
 
 
 @router.post("/messages/{mid}/action", dependencies=[Depends(verify_csrf)])

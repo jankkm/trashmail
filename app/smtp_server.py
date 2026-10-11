@@ -182,28 +182,32 @@ async def deliver(raw: bytes, *, mail_from: str, rcpt: str, ip: str = "", helo: 
                               tags=[act["arg"] for _, act in actions if act["action"] == "tag"])
 
     for rule, act in actions:
-        if act["action"] != "forward":
-            rules.log_hit(rule, act["action"], message_id=mid, ctx=ctx,
-                          detail=act["arg"] if act["action"] == "tag" else "")
+        kind = act["action"]
+        if kind not in rules.OUTBOUND:
+            rules.log_hit(rule, kind, message_id=mid, ctx=ctx, detail=act["arg"] if kind == "tag" else "")
             continue
         if already_forwarded:
-            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail="skipped: loop protection", ok=False)
+            rules.log_hit(rule, kind, message_id=mid, ctx=ctx, detail="skipped: loop protection", ok=False)
             continue
         limit = config.get_int("FORWARD_LIMIT_PER_HOUR")
         if limit > 0 and rules.forwards_last_hour() >= limit:
-            log.warning("forward limit of %s/hour reached, not forwarding", limit)
-            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, ok=False,
+            log.warning("forward limit of %s/hour reached, not sending", limit)
+            rules.log_hit(rule, kind, message_id=mid, ctx=ctx, ok=False,
                           detail=f"skipped: hourly forward limit ({limit}) reached")
             continue
         try:
-            await forwarder.forward_raw(
-                act["arg"], raw, subject=ctx.subject,
-                summary=(f"Forwarded from Trashmail\nOriginal sender: {from_header or mail_from}\n"
-                         f"Received for: {rcpt}\nSubject: {ctx.subject}\n"))
-            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail=f"forwarded to {act['arg']}")
+            if kind == "redirect":
+                await forwarder.redirect_raw(act["arg"], raw)
+            else:
+                await forwarder.forward_raw(
+                    act["arg"], raw, subject=ctx.subject,
+                    summary=(f"Forwarded from Trashmail\nOriginal sender: {from_header or mail_from}\n"
+                             f"Received for: {rcpt}\nSubject: {ctx.subject}\n"))
+            rules.log_hit(rule, kind, message_id=mid, ctx=ctx,
+                          detail=f"{'redirected' if kind == 'redirect' else 'forwarded'} to {act['arg']}")
         except forwarder.ForwardError as exc:
-            log.warning("rule %s forward failed: %s", rule["id"], exc)
-            rules.log_hit(rule, "forward", message_id=mid, ctx=ctx, detail=str(exc), ok=False)
+            log.warning("rule %s %s failed: %s", rule["id"], kind, exc)
+            rules.log_hit(rule, kind, message_id=mid, ctx=ctx, detail=str(exc), ok=False)
     return mid
 
 

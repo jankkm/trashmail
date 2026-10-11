@@ -105,21 +105,27 @@ def account(request: Request, user=Depends(current_user)):
 
 
 @router.post("/account", dependencies=[Depends(verify_csrf)])
-def account_save(name: str = Form(""), current: str = Form(""), new_password: str = Form(""),
-                 default_view: str = Form(""), forward_email: str = Form(""), user=Depends(current_user)):
+def account_save(name: str = Form(""), default_view: str = Form(""), forward_email: str = Form(""),
+                 forward_mode: str = Form(""), user=Depends(current_user)):
     forward_email = forward_email.strip()
     if forward_email and not forwarder.ADDRESS_RE.fullmatch(forward_email):
         return back("/account", err="Forwarding address is not a valid email address")
-    if new_password:
-        if not auth.verify_password(user["password_hash"], current):
-            return back("/account", err="Current password is wrong")
-        if len(new_password) < 8:
-            return back("/account", err="Password must be at least 8 characters")
-        db.execute("UPDATE users SET password_hash=? WHERE id=?", (auth.hash_password(new_password), user["id"]))
     db.execute("UPDATE users SET name=?, forward_email=? WHERE id=?", (name.strip(), forward_email, user["id"]))
     if default_view in ("all", "unread", "flagged"):
         db.execute("UPDATE users SET default_view=? WHERE id=?", (default_view, user["id"]))
+    if forward_mode in ("forward", "redirect"):
+        db.execute("UPDATE users SET forward_mode=? WHERE id=?", (forward_mode, user["id"]))
     return back("/account", ok="Saved")
+
+
+@router.post("/account/password", dependencies=[Depends(verify_csrf)])
+def account_password(current: str = Form(""), new_password: str = Form(""), user=Depends(current_user)):
+    if not auth.verify_password(user["password_hash"], current):
+        return back("/account", err="Current password is wrong")
+    if len(new_password) < 8:
+        return back("/account", err="Password must be at least 8 characters")
+    db.execute("UPDATE users SET password_hash=? WHERE id=?", (auth.hash_password(new_password), user["id"]))
+    return back("/account", ok="Password changed")
 
 
 @router.post("/account/default-view", dependencies=[Depends(verify_csrf)])

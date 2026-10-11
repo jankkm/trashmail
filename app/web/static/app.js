@@ -79,7 +79,9 @@
   async function sendForward(form, btn, url) {
     if (!window.fetch || !form || btn?.classList.contains('busy')) return;
     const to = form.querySelector('[name=to]');
+    const mode = form.querySelector('select[name=mode]');
     const body = new URLSearchParams({ csrf: form.querySelector('[name=csrf]').value, to: to ? to.value : '' });
+    if (mode) body.set('mode', mode.value);
     btn?.classList.add('busy'); btn?.setAttribute('aria-busy', 'true');
     const pending = toast('Sending…', true);
     try {
@@ -87,11 +89,11 @@
                                    headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' } });
       const data = await r.json().catch(() => ({}));
       pending.remove();
-      toast(data.message || (r.ok ? 'Forwarded' : 'Forwarding failed (' + r.status + ')'), r.ok);
+      toast(data.message || (r.ok ? 'Sent' : 'Sending failed (' + r.status + ')'), r.ok);
       if (r.ok && to) to.value = '';
     } catch (err) {
       pending.remove();
-      toast('Forwarding failed: network error', false);
+      toast('Sending failed: network error', false);
     } finally {
       btn?.classList.remove('busy'); btn?.removeAttribute('aria-busy');
     }
@@ -130,12 +132,13 @@
     const action = f.querySelector('[name=act_type]'), arg = f.querySelector('[data-forward]');
     const sync = () => {
       if (!arg) return;
-      const needs = action.value === 'forward' || action.value === 'tag';
+      const needs = action.value === 'forward' || action.value === 'redirect' || action.value === 'tag';
       const input = arg.querySelector('input');
       arg.hidden = !needs;
       input.required = needs;
-      input.type = action.value === 'forward' ? 'email' : 'text';
-      input.placeholder = action.value === 'forward' ? 'Forward to address' : 'Tag name';
+      const mail = action.value === 'forward' || action.value === 'redirect';
+      input.type = mail ? 'email' : 'text';
+      input.placeholder = mail ? 'Send to address' : 'Tag name';
     };
     action?.addEventListener('change', sync); sync();
   });
@@ -168,10 +171,11 @@
       $$('.act-row', acts).forEach((row) => {
         const arg = row.querySelector('[data-arg]');
         const type = row.querySelector('[name=act_type]').value;
-        arg.hidden = type !== 'forward' && type !== 'tag';
+        const mail = type === 'forward' || type === 'redirect';
+        arg.hidden = !mail && type !== 'tag';
         arg.required = !arg.hidden;
-        arg.type = type === 'forward' ? 'email' : 'text';
-        arg.placeholder = type === 'forward' ? 'name@example.com' : 'Tag name';
+        arg.type = mail ? 'email' : 'text';
+        arg.placeholder = mail ? 'name@example.com' : 'Tag name';
       });
       $$('[data-remove]', acts).forEach((b) => { b.hidden = acts.children.length < 2; });   // keep >= 1 action
     };

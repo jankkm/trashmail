@@ -20,7 +20,7 @@ It **never relays** mail: it only accepts messages for its own domains and store
 | Inbox | Unread rows stand out (bold, accent bar) from read ones (muted); click the star to flag in place. Filter by recipient, favorite and **tag**, full-text search, All / Unread / Flagged view with a **per-user default** (e.g. always start on Unread), bulk actions incl. bulk tagging, 24 h activity chart. |
 | Tags | Free-form labels on messages. Add them by hand (message page, bulk bar) or automatically with the rule action **Add tag**; click a tag to filter. Case-insensitive, max 32 characters. |
 | Message view | Sanitised HTML in a sandboxed iframe, **external resources blocked until you click "Load external resources"**, plain text, headers, attachments, download `.eml`, forward, flag, delete |
-| Rules | Per recipient address or global. **Any number of conditions** (sender / recipient / subject / body / any / a specific header; contains, does not contain, equals, starts/ends with, regex), combined with *all* or *any*. **One or more actions** that run in order: **flag**, **mark as read**, **add tag**, **forward**, **delete**. Named, prioritised, editable, with a hit log. |
+| Rules | Per recipient address or global. **Any number of conditions** (sender / recipient / subject / body / any / a specific header; contains, does not contain, equals, starts/ends with, regex), combined with *all* or *any*. **One or more actions** that run in order: **flag**, **mark as read**, **add tag**, **forward**, **redirect**, **delete**. Named, prioritised, editable, with a hit log. |
 | Favorites | A named group of recipient addresses with notes. The favorite's page shows all its emails (search, unread/flagged, bulk actions) and all rules scoped to its addresses, with an inline rule editor. The inbox can be filtered by favorite. |
 | Blacklist | Sender address, sender domain, recipient address, recipient domain. Rejected with `550` during the SMTP dialogue. Domains also match subdomains. |
 | Auth checks | SPF, DKIM, DMARC results shown as badges; optional reject on SPF fail |
@@ -206,12 +206,17 @@ that are shown once. At sign-in the password is followed by a code (or a recover
   one-condition-one-action rules into `rule_conditions` / `rule_actions` (it is a no-op on new databases).
 * **Per-recipient copies**: a mail to 3 local recipients is stored 3 times, so each copy can be
   flagged/deleted/ruled independently. Simple on purpose.
-* **Personal forwarding address**: users can save one under *Account*; messages then get a one-click
-  "Forward to me" button (message page and inbox rows). Forwards are sent with `fetch` and answered as JSON, so
+* **Personal forwarding address**: users can save one under *Account* and choose whether the one-click
+  button *forwards* or *redirects*; messages then get a "Forward/Redirect to me" button (message page and
+  inbox rows). Forwards are sent with `fetch` and answered as JSON, so
   the page doesn't reload (the forms still work without JS).
 * **Forwarding** sends a *new* message from the configured SMTP account with the original attached as
   `original.eml` (keeps your own SPF/DKIM valid). Forwarded mail carries `X-Trashmail-Forwarded: 1`;
   rules never forward such mail again (loop protection).
+* **Redirect** re-sends the stored message *unchanged* (original headers and body; `Resent-*` and
+  `X-Trashmail-Forwarded` headers are prepended, envelope sender is the forwarding account). Use it when the
+  recipient should see the original mail rather than an attachment. Redirect shares the loop protection and the
+  hourly cap with forward; note that SPF of the original sender will not align with the forwarding account.
 * **Rule semantics**: a rule belongs to one recipient address (or all) and has 0..n conditions joined by
   AND (`match_mode=all`) or OR (`any`); no conditions = matches every message in scope. All enabled matching
   rules apply, ordered by `priority`, and each runs all of its actions in order. Actions combine across rules:

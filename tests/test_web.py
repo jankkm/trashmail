@@ -371,3 +371,36 @@ def test_forward_uses_profile_address_and_answers_json(client, monkeypatch):
     client.post("/account", data={"csrf": token, "name": "A", "forward_email": ""})
     r = client.post(f"/messages/{mid}/forward", data={"csrf": token}, headers=fetch)
     assert r.status_code == 422 and r.json()["ok"] is False
+
+
+def test_quick_button_follows_profile_mode_and_password_has_own_form(client, monkeypatch):
+    from app import config, forwarder
+    token = login(client)
+    mid = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    calls = []
+
+    async def fake_redirect(to, raw):
+        calls.append(("redirect", to, raw))
+
+    async def fake_forward(to, raw, *, subject, summary):
+        calls.append(("forward", to, raw))
+    monkeypatch.setattr(forwarder, "redirect_raw", fake_redirect)
+    monkeypatch.setattr(forwarder, "forward_raw", fake_forward)
+    config.set_value("FORWARD_SMTP_HOST", "smtp.test")
+    fetch = {"X-Requested-With": "fetch"}
+
+    client.post("/account", data={"csrf": token, "name": "A", "forward_email": "me@x.test", "forward_mode": "redirect"})
+    assert auth.authenticate("admin", "adminpass1")["forward_mode"] == "redirect"
+    assert "Redirect to me" in client.get(f"/messages/{mid}").text
+    r = client.post(f"/messages/{mid}/forward", data={"csrf": token}, headers=fetch)
+    assert r.json()["message"] == "Redirected to me@x.test" and calls[-1][0] == "redirect"
+    r = client.post(f"/messages/{mid}/forward", data={"csrf": token, "mode": "forward"}, headers=fetch)
+    assert r.json()["message"] == "Forwarded to me@x.test" and calls[-1][0] == "forward"
+
+    client.post("/account", data={"csrf": token, "name": "A", "forward_mode": "bogus"})   # ignored
+    assert auth.authenticate("admin", "adminpass1")["forward_mode"] == "redirect"
+
+    r = client.post("/account/password", data={"csrf": token, "current": "wrong", "new_password": "newpassword1"})
+    assert "err=" in r.headers["location"]
+    r = client.post("/account/password", data={"csrf": token, "current": "adminpass1", "new_password": "newpassword1"})
+    assert "ok=" in r.headers["location"] and auth.authenticate("admin", "newpassword1")

@@ -16,7 +16,7 @@
       <a class="btn icon" href="/messages/{{ m.id }}/download" title="Download .eml" aria-label="Download .eml">{{ icon('download', 16) }}</a>
       {% if forward_ok and user.forward_email %}
       <button class="btn" formaction="/messages/{{ m.id }}/forward" data-async-forward
-              title="Forward to {{ user.forward_email }}">{{ icon('corner-up-right', 16) }} Forward to me</button>
+              title="{{ 'Redirect' if user.forward_mode == 'redirect' else 'Forward' }} to {{ user.forward_email }}">{{ icon('corner-up-right', 16) }} {{ 'Redirect' if user.forward_mode == 'redirect' else 'Forward' }} to me</button>
       {% endif %}
     </form>
 
@@ -65,7 +65,7 @@
           </div>
           <input name="cond_value" id="qr-value" value="{{ m.mail_from }}" placeholder="Text to match" required>
           <label class="field">Then
-            <select name="act_type"><option value="flag">Flag</option><option value="mark_read">Mark as read</option><option value="tag">Add tag</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
+            <select name="act_type"><option value="flag">Flag</option><option value="mark_read">Mark as read</option><option value="tag">Add tag</option><option value="delete">Delete</option><option value="forward">Forward</option><option value="redirect">Redirect</option></select>
           </label>
           <div data-forward hidden><input type="email" name="act_arg" placeholder="Forward to address"></div>
           <button class="btn primary">Add rule</button>
@@ -174,14 +174,18 @@
     </section>
 
     <section class="card">
-      <div class="card-header"><span class="ico">{{ icon('corner-up-right', 18) }}</span><h2>Forward</h2></div>
+      <div class="card-header"><span class="ico">{{ icon('corner-up-right', 18) }}</span><h2>Forward or redirect</h2></div>
       <div class="card-body">
         {% if forward_ok %}
         <form method="post" action="/messages/{{ m.id }}/forward" class="stack" data-async-forward>
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="email" name="to" placeholder="{{ user.forward_email or 'name@example.com' }}" {{ '' if user.forward_email else 'required' }}>
-          <button class="btn primary">{{ icon('send', 16) }} Forward message</button>
-          <p class="hint">Sent from your configured SMTP account with the original attached as .eml.{% if user.forward_email %} Leave empty to send to {{ user.forward_email }}.{% else %} <a class="link" href="/account">Save your address</a> for one-click forwarding.{% endif %}</p>
+          <select name="mode" aria-label="How to send">
+            <option value="forward" {{ 'selected' if user.forward_mode != 'redirect' }}>Forward — original attached as .eml</option>
+            <option value="redirect" {{ 'selected' if user.forward_mode == 'redirect' }}>Redirect — message unchanged</option>
+          </select>
+          <button class="btn primary">{{ icon('send', 16) }} Send</button>
+          <p class="hint">Sent through your configured SMTP account.{% if user.forward_email %} Leave empty to send to {{ user.forward_email }}.{% else %} <a class="link" href="/account">Save your address</a> for one-click forwarding.{% endif %}</p>
         </form>
         {% else %}
         <p class="muted">No forwarding SMTP account is configured.{% if user.is_admin %} <a class="link" href="/settings">Set one up</a>.{% endif %}</p>

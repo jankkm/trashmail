@@ -26,7 +26,7 @@
           {% if a.action == 'tag' %}
           <span class="tok act tag-act">{{ labels.ACTION_LABELS['tag'] }} <span class="tag" style="--h: {{ a.arg|taghue }}">{{ a.arg }}</span></span>
           {% else %}
-          <span class="tok act {{ a.action }}">{{ labels.ACTION_LABELS[a.action] }}{% if a.action == 'forward' %} {{ a.arg }}{% endif %}</span>
+          <span class="tok act {{ a.action }}">{{ labels.ACTION_LABELS[a.action] }}{% if a.action in ('forward', 'redirect') %} {{ a.arg }}{% endif %}</span>
           {% endif %}
         {% endfor %}
       </div>

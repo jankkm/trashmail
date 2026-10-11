@@ -2,43 +2,102 @@
 {% block title %}Account · Trashmail{% endblock %}
 {% block content %}
 <header class="page-header">
-  <div><h1>Your account</h1><p class="sub">Update your display name or change your password.</p></div>
-</header>
-<form method="post" action="/account" class="card" style="max-width:560px">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="card-body stack" style="gap:16px">
-    <div class="row" style="gap:14px">
-      <span class="avatar lg" style="--h: {{ user.username|hue }}">{{ (user.name or user.username)|initials }}</span>
-      <div><b>{{ user.name or user.username }}</b><div class="muted">@{{ user.username }} · {{ 'Administrator' if user.is_admin else 'User' }}</div></div>
+  <div class="row" style="gap:14px">
+    <span class="avatar lg" style="--h: {{ user.username|hue }}">{{ (user.name or user.username)|initials }}</span>
+    <div>
+      <h1>{{ user.name or user.username }}</h1>
+      <p class="sub">@{{ user.username }} · {{ 'Administrator' if user.is_admin else 'User' }}</p>
     </div>
-    <label class="field">Display name<input name="name" value="{{ user.name }}"></label>
-    <label class="field">Default inbox view
-      <select name="default_view">
-        <option value="all" {{ 'selected' if user.default_view == 'all' }}>All</option>
-        <option value="unread" {{ 'selected' if user.default_view == 'unread' }}>Unread</option>
-        <option value="flagged" {{ 'selected' if user.default_view == 'flagged' }}>Flagged</option>
-      </select>
-      <span class="hint">What the inbox shows when you open it. You can still switch with All / Unread / Flagged.</span>
-    </label>
-    <label class="field">Forwarding address
-      <input type="email" name="forward_email" value="{{ user.forward_email }}" placeholder="you@example.com">
-      <span class="hint">Your personal mailbox. Adds a one-click “Forward to me” button to messages. Leave empty to disable.</span>
-    </label>
-    <hr style="border:0;border-top:1px solid var(--border);width:100%;margin:2px 0">
-    <label class="field">Current password <span class="hint">Only needed when setting a new password.</span>
-      <input type="password" name="current" autocomplete="current-password"></label>
-    <label class="field">New password <span class="hint">At least 8 characters.</span>
-      <input type="password" name="new_password" autocomplete="new-password"></label>
   </div>
-  <div class="dialog-foot"><button class="btn primary">Save changes</button></div>
-</form>
+</header>
 
-<section class="card" style="max-width:560px">
-  <div class="card-header">
-    <span class="ico">{{ icon('shield-check', 18) }}</span>
-    <div class="grow"><h2>Two-factor authentication</h2><p>Protect your account with a code from an authenticator app.</p></div>
-    {% if user.totp_enabled %}<span class="badge success">Enabled</span>{% else %}<span class="badge">Off</span>{% endif %}
-  </div>
-  <div class="card-body"><a class="btn" href="/account/2fa">{{ 'Manage' if user.totp_enabled else 'Set up' }}</a></div>
-</section>
+<div class="account">
+  <form method="post" action="/account" class="stack" style="gap:20px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('user', 18) }}</span>
+        <div class="grow"><h2>Profile</h2><p>How you appear in the app.</p></div></div>
+      <div class="setting">
+        <div><div class="name">Display name</div></div>
+        <div class="ctl"><input name="name" value="{{ user.name }}" autocomplete="name"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('inbox', 18) }}</span>
+        <div class="grow"><h2>Inbox</h2><p>Your personal view of the shared mailbox.</p></div></div>
+      <div class="setting">
+        <div>
+          <div class="name">Default view</div>
+          <div class="desc">What the inbox shows when you open it. You can still switch with All / Unread / Flagged.</div>
+        </div>
+        <div class="ctl">
+          <select name="default_view">
+            <option value="all" {{ 'selected' if user.default_view == 'all' }}>All</option>
+            <option value="unread" {{ 'selected' if user.default_view == 'unread' }}>Unread</option>
+            <option value="flagged" {{ 'selected' if user.default_view == 'flagged' }}>Flagged</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('send', 18) }}</span>
+        <div class="grow"><h2>Quick forward</h2><p>The one-click button next to messages.</p></div>
+        {% if not forward_ok %}<span class="badge warn">No SMTP account</span>{% endif %}</div>
+      <div class="setting">
+        <div>
+          <div class="name">Your address</div>
+          <div class="desc">Your personal mailbox. Leave empty to hide the button.</div>
+        </div>
+        <div class="ctl"><input type="email" name="forward_email" value="{{ user.forward_email }}" placeholder="you@example.com"></div>
+      </div>
+      <div class="setting">
+        <div>
+          <div class="name">What the button does</div>
+          <div class="desc">You can always pick the other option in the message's Forward card.</div>
+        </div>
+        <div class="ctl choice-list">
+          <label class="choice">
+            <input type="radio" name="forward_mode" value="forward" {{ 'checked' if user.forward_mode != 'redirect' }}>
+            <span><b>Forward</b><small>New mail from your SMTP account with the original attached as .eml.</small></span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="forward_mode" value="redirect" {{ 'checked' if user.forward_mode == 'redirect' }}>
+            <span><b>Redirect</b><small>The original message, unchanged, so it looks like it came straight from the sender.</small></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <div><button class="btn primary">Save changes</button></div>
+  </form>
+
+  <section class="card">
+    <div class="card-header"><span class="ico">{{ icon('shield-check', 18) }}</span>
+      <div class="grow"><h2>Security</h2><p>Password and sign-in protection.</p></div></div>
+    <div class="setting">
+      <div>
+        <div class="name">Two-factor authentication
+          {% if user.totp_enabled %}<span class="badge success">Enabled</span>{% else %}<span class="badge">Off</span>{% endif %}
+        </div>
+        <div class="desc">Protect your account with a code from an authenticator app.</div>
+      </div>
+      <div class="ctl"><div><a class="btn" href="/account/2fa">{{ 'Manage' if user.totp_enabled else 'Set up' }}</a></div></div>
+    </div>
+    <form method="post" action="/account/password" class="setting">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div>
+        <div class="name">Change password</div>
+        <div class="desc">At least 8 characters.</div>
+      </div>
+      <div class="ctl">
+        <input type="password" name="current" placeholder="Current password" autocomplete="current-password" required aria-label="Current password">
+        <input type="password" name="new_password" placeholder="New password" autocomplete="new-password" minlength="8" required aria-label="New password">
+        <div><button class="btn">Change password</button></div>
+      </div>
+    </form>
+  </section>
+</div>
 {% endblock %}
