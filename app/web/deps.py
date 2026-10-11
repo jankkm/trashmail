@@ -72,6 +72,14 @@ templates.env.filters.update({"dt": _dt, "short": _short, "size": _size, "sname"
 templates.env.globals["icon"] = icon
 
 
+def to_int(value, default: int = 0) -> int:
+    """Query parameters from HTML forms may be empty ("?fav=") or junk; never fail the request."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 class LoginRequired(Exception):
     pass
 

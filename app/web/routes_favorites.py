@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from .. import favorites, mailstore, rules
 from . import ruleui
-from .deps import back, current_user, render, verify_csrf
+from .deps import back, current_user, render, to_int, verify_csrf
 
 router = APIRouter()
 PER_PAGE = 25
@@ -40,10 +40,10 @@ def favorites_create(name: str = Form(""), addresses: str = Form(""), notes: str
 
 
 @router.get("/favorites/{fid}", response_class=HTMLResponse)
-def favorite_page(request: Request, fid: int, q: str = "", unread: int = 0, flagged: int = 0, page: int = 1,
-                  user=Depends(current_user)):
+def favorite_page(request: Request, fid: int, q: str = "", unread: str = "", flagged: str = "",
+                  page: str = "1", user=Depends(current_user)):
     fav = _get(fid)
-    page = max(page, 1)
+    unread, flagged, page = to_int(unread), to_int(flagged), max(to_int(page, 1), 1)
     rows, total = mailstore.list_messages(
         q=q, rcpts=fav["addresses"], flagged=bool(flagged), unread=bool(unread),
         limit=PER_PAGE, offset=(page - 1) * PER_PAGE)

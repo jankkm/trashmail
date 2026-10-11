@@ -253,3 +253,17 @@ def test_admin_can_reset_two_factor(client):
     r = client.post(f"/users/{uid}/reset-2fa", data={"csrf": token})
     assert "ok=" in r.headers["location"]
     assert auth.get_user(uid)["totp_enabled"] == 0
+
+
+def test_filter_forms_survive_empty_and_junk_numeric_params(client):
+    """The inbox filter form submits fav= (and friends) empty when nothing is selected."""
+    login(client)
+    mailstore.store(SAMPLE, mail_from="alice@sender.test", rcpt="bob@example.test")
+    url = "/?q=&rcpt=bob%40example.test&fav=&flagged=&unread=&page="
+    r = client.get(url)
+    assert r.status_code == 200 and "Hello Wolrd invoice" in r.text
+    assert client.get("/?fav=abc&page=-3&unread=x").status_code == 200
+    from app import favorites
+    fid = favorites.create("Mine", "bob@example.test")
+    assert client.get(f"/favorites/{fid}?q=&unread=&flagged=&page=").status_code == 200
+    assert client.get(f"/?fav={fid}&rcpt=").status_code == 200

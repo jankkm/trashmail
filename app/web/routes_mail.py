@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .. import favorites, forwarder, mailstore, rules
-from .deps import admin_user, back, current_user, render, verify_csrf
+from .deps import admin_user, back, current_user, render, to_int, verify_csrf
 
 router = APIRouter()
 PER_PAGE = 50
@@ -23,9 +23,9 @@ def _row_or_404(mid: int):
 
 
 @router.get("/", response_class=HTMLResponse)
-def inbox(request: Request, q: str = "", rcpt: str = "", fav: int = 0, flagged: int = 0, unread: int = 0,
-          page: int = 1, user=Depends(current_user)):
-    page = max(page, 1)
+def inbox(request: Request, q: str = "", rcpt: str = "", fav: str = "", flagged: str = "", unread: str = "",
+          page: str = "1", user=Depends(current_user)):
+    fav, flagged, unread, page = to_int(fav), to_int(flagged), to_int(unread), max(to_int(page, 1), 1)
     favs = favorites.list_favorites()
     selected = next((f for f in favs if f["id"] == fav), None)
     rows, total = mailstore.list_messages(
