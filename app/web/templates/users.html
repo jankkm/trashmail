@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Users · Trashmail{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Users</h1><p class="sub">People who can sign in. Administrators can also manage users, the blacklist and settings.</p></div>
+  <div class="actions"><button class="btn primary" data-open="add-user">{{ icon('plus', 16) }} Add user</button></div>
+</header>
+
+<section class="card flush">
+  <table>
+    <thead><tr><th>User</th><th>Role</th><th>Created</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr>
+      <td>
+        <div class="row" style="flex-wrap:nowrap;gap:12px">
+          <span class="avatar" style="--h: {{ u.username|hue }}">{{ (u.name or u.username)|initials }}</span>
+          <div><b>{{ u.name or u.username }}</b>{% if u.id == user.id %} <span class="badge">You</span>{% endif %}<div class="muted">@{{ u.username }}</div></div>
+        </div>
+      </td>
+      <td>{% if u.is_admin %}<span class="badge success">{{ icon('shield', 12) }} Administrator</span>{% else %}<span class="badge">User</span>{% endif %}</td>
+      <td class="muted nowrap">{{ u.created_at|dt }}</td>
+      <td class="right nowrap">
+        <button class="btn sm" data-open="edit-{{ u.id }}">{{ icon('pencil', 14) }} Edit</button>
+        {% if u.id != user.id %}
+        <form method="post" action="/users/{{ u.id }}/delete" style="display:inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn sm danger icon" data-confirm="Delete user {{ u.username }}?" title="Delete" aria-label="Delete">{{ icon('trash', 14) }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<dialog id="add-user">
+  <form method="post" action="/users">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="dialog-head"><h2>Add user</h2><button type="button" class="btn ghost icon sm" data-close aria-label="Close">{{ icon('x', 16) }}</button></div>
+    <div class="dialog-body">
+      <div class="grid-2">
+        <label class="field">Username<input name="username" required autocomplete="off"></label>
+        <label class="field">Display name<input name="name"></label>
+      </div>
+      <label class="field">Password <span class="hint">At least 8 characters.</span><input type="password" name="password" required autocomplete="new-password"></label>
+      <label class="row" style="flex-wrap:nowrap"><span class="switch"><input type="checkbox" name="is_admin" value="1"><i></i></span><span><b>Administrator</b><br><span class="hint">Can manage users, blacklist and settings.</span></span></label>
+    </div>
+    <div class="dialog-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Create user</button></div>
+  </form>
+</dialog>
+
+{% for u in users %}
+<dialog id="edit-{{ u.id }}">
+  <form method="post" action="/users/{{ u.id }}/update">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="dialog-head"><h2>Edit @{{ u.username }}</h2><button type="button" class="btn ghost icon sm" data-close aria-label="Close">{{ icon('x', 16) }}</button></div>
+    <div class="dialog-body">
+      <label class="field">Display name<input name="name" value="{{ u.name }}"></label>
+      <label class="field">New password <span class="hint">Leave empty to keep the current password.</span><input type="password" name="password" autocomplete="new-password"></label>
+      <label class="row" style="flex-wrap:nowrap"><span class="switch"><input type="checkbox" name="is_admin" value="1" {{ 'checked' if u.is_admin }}><i></i></span><span><b>Administrator</b><br><span class="hint">Can manage users, blacklist and settings.</span></span></label>
+    </div>
+    <div class="dialog-foot"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save changes</button></div>
+  </form>
+</dialog>
+{% endfor %}
+{% endblock %}

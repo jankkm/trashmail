@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Inbox · Trashmail{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Inbox</h1>
+    <p class="sub">{{ total }} message{{ '' if total == 1 else 's' }}{% if q or rcpt or flagged or unread %} match your filters{% endif %} · updated {{ now }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/?{{ full_qs }}">{{ icon('refresh', 16) }} Refresh</a>
+  </div>
+</header>
+
+<section class="card overview">
+  <div class="stat"><div class="label">{{ icon('mail', 15) }} Total</div><div class="num">{{ stats.total }}</div></div>
+  <div class="stat"><div class="label">{{ icon('clock', 15) }} Last 24 hours</div><div class="num">{{ stats.today }}</div></div>
+  <div class="stat"><div class="label">{{ icon('eye', 15) }} Unread</div><div class="num">{{ stats.unread }}</div></div>
+  <div class="chart">
+    <div class="label muted" style="font-size:12.5px;font-weight:550">Activity, last 24 hours</div>
+    <div class="hist">
+      {% for h in histogram %}<span class="{{ 'zero' if h.count == 0 }}" style="height:{{ [h.pct, 7]|max }}%" title="{{ h.label }} · {{ h.count }}"></span>{% endfor %}
+    </div>
+    <div class="axis"><span>{{ histogram[0].label }}</span><span>{{ histogram[12].label }}</span><span>now</span></div>
+  </div>
+</section>
+
+<form class="toolbar" method="get" action="/">
+  <div class="input-icon">{{ icon('search', 16) }}<input type="search" name="q" value="{{ q }}" placeholder="Search subject, sender, recipient and text…"></div>
+  <select name="rcpt" onchange="this.form.submit()" aria-label="Recipient">
+    <option value="">All recipients</option>
+    {% for r in recipients %}<option value="{{ r.rcpt_to }}" {{ 'selected' if r.rcpt_to == rcpt }}>{{ r.rcpt_to }} ({{ r.c }})</option>{% endfor %}
+  </select>
+  <div class="segmented">
+    <a href="/?{{ qs_search }}" class="{{ 'on' if not unread and not flagged }}">All</a>
+    <a href="/?{{ qs_search }}&unread=1" class="{{ 'on' if unread }}">Unread</a>
+    <a href="/?{{ qs_search }}&flagged=1" class="{{ 'on' if flagged }}">Flagged</a>
+  </div>
+  {% if unread %}<input type="hidden" name="unread" value="1">{% endif %}
+  {% if flagged %}<input type="hidden" name="flagged" value="1">{% endif %}
+  <button class="btn primary">Search</button>
+  {% if q or rcpt or unread or flagged %}<a class="btn ghost" href="/">Clear</a>{% endif %}
+</form>
+
+<form method="post" action="/messages/bulk" class="card flush" data-bulk>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="next" value="/?{{ full_qs }}">
+  {% if rows %}
+  <div class="bulkbar">
+    <b><span data-count>0</span> selected</b>
+    <span class="grow"></span>
+    <button class="btn sm" name="action" value="flag">{{ icon('star', 15) }} Flag</button>
+    <button class="btn sm" name="action" value="unflag">Unflag</button>
+    <button class="btn sm" name="action" value="read">Mark read</button>
+    <button class="btn sm" name="action" value="unread">Mark unread</button>
+    <button class="btn sm danger" name="action" value="delete" data-confirm="Delete the selected messages?">{{ icon('trash', 15) }} Delete</button>
+  </div>
+  <div class="msg-head">
+    <input type="checkbox" class="sel-all" aria-label="Select all">
+    <span></span><span></span><span>Message</span><span style="text-align:right">Recipient</span><span style="text-align:right">Received</span>
+  </div>
+  {% for m in rows %}
+  <div class="msg-row {{ 'unread' if not m.is_read }}">
+    <a class="stretch" href="/messages/{{ m.id }}" aria-label="Open message"></a>
+    <input class="sel" type="checkbox" name="ids" value="{{ m.id }}" aria-label="Select">
+    <span class="star {{ 'on' if m.flagged }}">{{ icon('star', 16) }}</span>
+    <span class="avatar" style="--h: {{ (m.from_header or m.mail_from)|hue }}">{{ (m.from_header or m.mail_from)|initials }}</span>
+    <div class="msg-main">
+      <div class="from"><span class="ellipsis">{{ (m.from_header or m.mail_from)|sname }}</span>
+        {% if m.attachments %}<span class="muted">{{ icon('paperclip', 14) }}</span>{% endif %}</div>
+      <div class="line ellipsis"><b>{{ m.subject or '(no subject)' }}</b>{% if m.snippet %} — {{ m.snippet }}{% endif %}</div>
+    </div>
+    <span class="rcpt"><span class="badge ellipsis" style="max-width:100%;display:block;line-height:20px">{{ m.rcpt_to }}</span></span>
+    <time title="{{ m.received_ts|dt }}">{{ m.received_ts|short }}</time>
+  </div>
+  {% endfor %}
+  {% if pages > 1 %}
+  <div class="pager">
+    <span>Page {{ page }} of {{ pages }}</span>
+    <span class="row">
+      {% if page > 1 %}<a class="btn sm" href="/?{{ base_qs }}&page={{ page - 1 }}">{{ icon('arrow-left', 14) }} Newer</a>{% endif %}
+      {% if page < pages %}<a class="btn sm" href="/?{{ base_qs }}&page={{ page + 1 }}">Older</a>{% endif %}
+    </span>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty">
+    <div class="ico">{{ icon('inbox', 24) }}</div>
+    {% if q or rcpt or flagged or unread %}
+    <h3>No messages match your filters</h3>
+    <p>Try a different search or <a class="link" href="/">clear the filters</a>.</p>
+    {% else %}
+    <h3>No messages yet</h3>
+    <p>Point an MX record at this server and send a mail to any address of your domains.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</form>
+{% endblock %}

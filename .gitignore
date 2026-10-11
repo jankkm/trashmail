@@ -1,0 +1,25 @@
+# Python / tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data (database, mail, generated secret key)
+data/*
+!data/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+
+# Local configuration and secrets - never commit
+.env
+.env.*
+!.env.example
+docker-compose.yml
+docker-compose.override.yml
+secrets/
+*.pem
+*.key
+CLAUDE.md

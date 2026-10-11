@@ -1,0 +1,6 @@
+# Allowlist: nothing enters the build context unless it is listed below.
+**
+!pyproject.toml
+!app/**/*.py
+!app/web/templates/*.html
+!app/web/static/*

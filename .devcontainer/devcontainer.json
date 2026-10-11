@@ -1,0 +1,22 @@
+{
+  "name": "trashmail",
+  "build": { "dockerfile": "Dockerfile", "context": ".." },
+  "forwardPorts": [8080, 2525],
+  "portsAttributes": { "8080": { "label": "Web UI" }, "2525": { "label": "SMTP" } },
+  "containerEnv": {
+    "DATA_DIR": "/workspaces/trashmail/data",
+    "SMTP_LISTEN_PORT": "2525",
+    "WEB_PORT": "8080",
+    "LOCAL_DOMAINS": "localhost,example.test",
+    "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSWORD": "admin",
+    "SECRET_KEY": "dev-only-secret"
+  },
+  "postCreateCommand": "pip install -e '.[dev]'",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"],
+      "settings": { "python.defaultInterpreterPath": "/usr/local/bin/python" }
+    }
+  }
+}

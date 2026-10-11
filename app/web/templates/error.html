@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Error · Trashmail{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="empty">
+    <div class="ico">{{ icon('alert', 24) }}</div>
+    <h3>{{ code }} · {{ message }}</h3>
+    <p style="margin-bottom:16px">Something went wrong, or you don't have access to this page.</p>
+    <a class="btn" href="/">{{ icon('arrow-left', 16) }} Back to inbox</a>
+  </div>
+</div>
+{% endblock %}

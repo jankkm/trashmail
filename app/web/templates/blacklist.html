@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Blacklist · Trashmail{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Blacklist</h1><p class="sub">Matching mail is rejected during the SMTP dialogue with a 550. A domain entry also covers its subdomains.</p></div>
+</header>
+
+<form method="post" action="/blacklist" class="card">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card-body row" style="flex-wrap:wrap">
+    <select name="kind" style="width:220px" aria-label="Type">
+      {% for k, label in kinds.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+    </select>
+    <input name="value" placeholder="spam@example.com or example.com" required style="flex:1 1 280px;width:auto">
+    <button class="btn primary">{{ icon('plus', 16) }} Add to blacklist</button>
+  </div>
+</form>
+
+{% for title, subtitle, wanted in [('Senders', 'Rejected at MAIL FROM', ('sender_address', 'sender_domain')), ('Recipients', 'Rejected at RCPT TO', ('rcpt_address', 'rcpt_domain'))] %}
+<section class="card flush">
+  <div class="card-header"><span class="ico">{{ icon('ban', 18) }}</span><div><h2>{{ title }}</h2><p>{{ subtitle }}</p></div></div>
+  {% set ns = namespace(n=0) %}
+  <table>
+    <tbody>
+    {% for e in entries if e.kind in wanted %}
+    {% set ns.n = ns.n + 1 %}
+    <tr>
+      <td style="width:150px"><span class="badge {{ 'info' if e.kind.endswith('domain') else '' }}">{{ icon('globe', 12) if e.kind.endswith('domain') else icon('user', 12) }} {{ 'Domain' if e.kind.endswith('domain') else 'Address' }}</span></td>
+      <td class="mono">{{ e.value }}</td>
+      <td class="muted nowrap" style="width:150px">{{ e.created_at|dt }}</td>
+      <td class="right" style="width:60px">
+        <form method="post" action="/blacklist/{{ e.id }}/delete">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn ghost icon sm" title="Remove" aria-label="Remove">{{ icon('x', 16) }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if ns.n == 0 %}<div class="empty" style="padding:28px"><p>No {{ title|lower }} blocked.</p></div>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}

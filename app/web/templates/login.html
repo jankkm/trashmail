@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Trashmail{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  {% include "logo.html" %}
+  <h1>Welcome back</h1>
+  <p class="sub">Sign in to your Trashmail inbox</p>
+  <form method="post" action="/login" class="stack">
+    <label class="field">Username
+      <input name="username" value="{{ username or '' }}" autocomplete="username" autofocus required>
+    </label>
+    <label class="field">Password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button class="btn primary block" style="margin-top:6px">Sign in</button>
+  </form>
+</div>
+{% endblock %}

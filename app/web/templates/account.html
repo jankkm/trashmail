@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Account · Trashmail{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Your account</h1><p class="sub">Update your display name or change your password.</p></div>
+</header>
+<form method="post" action="/account" class="card" style="max-width:560px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card-body stack" style="gap:16px">
+    <div class="row" style="gap:14px">
+      <span class="avatar lg" style="--h: {{ user.username|hue }}">{{ (user.name or user.username)|initials }}</span>
+      <div><b>{{ user.name or user.username }}</b><div class="muted">@{{ user.username }} · {{ 'Administrator' if user.is_admin else 'User' }}</div></div>
+    </div>
+    <label class="field">Display name<input name="name" value="{{ user.name }}"></label>
+    <hr style="border:0;border-top:1px solid var(--border);width:100%;margin:2px 0">
+    <label class="field">Current password <span class="hint">Only needed when setting a new password.</span>
+      <input type="password" name="current" autocomplete="current-password"></label>
+    <label class="field">New password <span class="hint">At least 8 characters.</span>
+      <input type="password" name="new_password" autocomplete="new-password"></label>
+  </div>
+  <div class="dialog-foot"><button class="btn primary">Save changes</button></div>
+</form>
+{% endblock %}

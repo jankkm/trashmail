@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Settings · Trashmail{% endblock %}
+{% block content %}
+{% set meta = {
+  'Receiving': ('inbox', 'What the server accepts and how strict it is.'),
+  'Storage': ('database', 'How long mail is kept.'),
+  'Forwarding': ('send', 'Outbound SMTP account used when forwarding mail.'),
+} %}
+{% set suffix = {'MAX_MESSAGE_SIZE': 'bytes', 'RATE_LIMIT_PER_IP': 'per min', 'RETENTION_DAYS': 'days'} %}
+{% set srcs = {'ui': ('info', 'Saved in UI'), 'env': ('', 'From environment'), 'env-live': ('', 'From environment'), 'default': ('', 'Default')} %}
+
+<header class="page-header">
+  <div><h1>Settings</h1><p class="sub">Values saved here always take precedence over environment variables.</p></div>
+</header>
+
+<section class="card server-info">
+  <div><div class="label">SMTP listener</div><div class="value">{{ icon('server', 16) }} Port {{ smtp_port }}</div></div>
+  <div><div class="label">STARTTLS</div><div class="value">
+    {% if tls %}<span class="badge success">{{ icon('lock', 12) }} Enabled</span>
+    {% else %}<span class="badge warn">Off</span><span class="hint" style="font-weight:400">set TLS_CERT_PATH + TLS_KEY_PATH</span>{% endif %}</div></div>
+  <div><div class="label">Accepting mail for</div><div class="value">
+    {% if domains %}<span class="ellipsis" style="max-width:240px">{{ domains }}</span>
+    {% else %}<span class="badge warn">{{ icon('alert', 12) }} Any domain</span>{% endif %}</div></div>
+</section>
+
+<form method="post" action="/settings" data-dirty>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">Save</button>
+  {% for group, items in groups.items() %}
+  <section class="card flush">
+    <div class="card-header">
+      <span class="ico">{{ icon(meta[group][0], 18) }}</span>
+      <div><h2>{{ group }}</h2><p>{{ meta[group][1] }}</p></div>
+    </div>
+    {% for it in items %}
+    {% set s = it.s %}
+    <div class="setting">
+      <div>
+        <div class="name">{{ s.label }}
+          <span class="badge {{ srcs[it.source][0] }}">{{ srcs[it.source][1] }}</span>
+        </div>
+        <div class="key">{{ s.key }}</div>
+        {% if s.help %}<div class="desc">{{ s.help }}</div>{% endif %}
+      </div>
+      <div class="ctl">
+        {% if s.kind == 'choice' %}
+          <select name="{{ s.key }}">{% for c in s.choices %}<option {{ 'selected' if c == it.value }}>{{ c }}</option>{% endfor %}</select>
+        {% elif s.kind == 'bool' %}
+          <label class="row" style="flex-wrap:nowrap">
+            <span class="switch"><input type="hidden" name="{{ s.key }}" value="false"><input type="checkbox" name="{{ s.key }}" value="true" {{ 'checked' if it.value == 'true' }}><i></i></span>
+            <span class="muted">{{ 'Enabled' if it.value == 'true' else 'Disabled' }}</span>
+          </label>
+        {% elif s.secret %}
+          <input type="password" name="{{ s.key }}" autocomplete="new-password" placeholder="{{ '••••••••  (set, type to replace)' if it.is_set else 'Not set' }}">
+        {% elif s.kind == 'int' and s.key in suffix %}
+          <div class="input-suffix"><input name="{{ s.key }}" value="{{ it.value }}" inputmode="numeric"><span>{{ suffix[s.key] }}</span></div>
+        {% else %}
+          <input name="{{ s.key }}" value="{{ it.value }}" {% if s.kind == 'int' %}inputmode="numeric"{% endif %}
+                 {% if s.key == 'LOCAL_DOMAINS' %}placeholder="example.com, *.example.org"{% endif %}>
+        {% endif %}
+        {% if it.source == 'ui' %}
+        <div class="foot"><button class="link" formaction="/settings/reset/{{ s.key }}" formnovalidate>Reset to environment value</button></div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% if group == 'Forwarding' %}
+    <div class="setting">
+      <div>
+        <div class="name">Send a test mail</div>
+        <div class="desc">Uses the <b>saved</b> settings. Save your changes first.</div>
+      </div>
+      <div class="ctl">
+        <div class="row" style="flex-wrap:nowrap">
+          <input type="email" name="to" placeholder="you@example.com">
+          <button class="btn" formaction="/settings/test-forward">{{ icon('send', 15) }} Send test</button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <div class="savebar" id="savebar" hidden>
+    <span>You have unsaved changes</span>
+    <button type="reset" class="btn sm ghost" style="color:var(--bg)" onclick="setTimeout(() => location.reload())">Discard</button>
+    <button class="btn sm primary">Save settings</button>
+  </div>
+</form>
+{% endblock %}

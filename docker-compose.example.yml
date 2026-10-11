@@ -1,0 +1,23 @@
+# Usage:  cp .env.example .env && $EDITOR .env && cp docker-compose.example.yml docker-compose.yml
+#         docker compose up -d --build
+#
+# All configuration comes from .env (see .env.example). Put a TLS-terminating reverse proxy
+# (Caddy/Traefik/nginx) in front of the web UI; never expose it as plain HTTP.
+services:
+  trashmail:
+    # Use the published image (pushed by .github/workflows/release.yml on every v* tag):
+    # image: ghcr.io/OWNER/REPO:latest
+    # ...or build locally:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # public SMTP (MX record points at this host); the container listens on 2525
+      - "${SMTP_PUBLISH_PORT:-25}:2525"
+      - "${WEB_PUBLISH:-127.0.0.1:8080}:8080"
+    volumes:
+      - ./data:/data
+      # TLS certs for STARTTLS (then set TLS_CERT_PATH=/certs/fullchain.pem, TLS_KEY_PATH=/certs/privkey.pem):
+      # - /etc/letsencrypt/live/mail.example.com:/certs:ro
+      # Docker-secret style files for the *_FILE variables (e.g. ADMIN_PASSWORD_FILE=/run/secrets/admin_password):
+      # - ./secrets:/run/secrets:ro

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{{ m.subject or '(no subject)' }} · Trashmail{% endblock %}
+{% block content %}
+<a class="back" href="/" onclick="if (history.length > 1 && document.referrer.startsWith(location.origin)) { history.back(); return false; }">{{ icon('arrow-left', 16) }} Inbox</a>
+
+<header class="page-header">
+  <div class="grow">
+    <h1>{{ m.subject or '(no subject)' }}</h1>
+    <p class="sub">{{ m.received_ts|dt }} · {{ m.size|size }}{% if m.flagged %} · <span style="color:#f59e0b">Flagged</span>{% endif %}</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="/messages/{{ m.id }}/action" class="row" style="gap:8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" name="action" value="{{ 'unflag' if m.flagged else 'flag' }}">{{ icon('star', 16) }} {{ 'Unflag' if m.flagged else 'Flag' }}</button>
+      <button class="btn icon" name="action" value="unread" title="Mark as unread" aria-label="Mark as unread">{{ icon('mail', 16) }}</button>
+      <a class="btn icon" href="/messages/{{ m.id }}/download" title="Download .eml" aria-label="Download .eml">{{ icon('download', 16) }}</a>
+    </form>
+
+    {% if user.is_admin %}
+    <details class="menu">
+      <summary class="btn">{{ icon('ban', 16) }} Block {{ icon('chevron-down', 14) }}</summary>
+      <div class="panel">
+        <p class="muted" style="margin-bottom:10px">Future mail matching this is rejected during the SMTP dialogue (550).</p>
+        <form method="post" action="/messages/{{ m.id }}/blacklist" class="stack">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          {% if sender_addr %}
+          <button class="menu-item" name="kind" value="sender_address">{{ icon('user', 16) }}<span><b>Sender address</b><small>{{ sender_addr }}</small></span></button>
+          <button class="menu-item" name="kind" value="sender_domain">{{ icon('globe', 16) }}<span><b>Sender domain</b><small>{{ sender_domain }}</small></span></button>
+          {% else %}<p class="muted">Empty sender (bounce): nothing to block on the sender side.</p>{% endif %}
+          <button class="menu-item" name="kind" value="rcpt_address">{{ icon('mail', 16) }}<span><b>Recipient address</b><small>{{ m.rcpt_to }}</small></span></button>
+          <button class="menu-item" name="kind" value="rcpt_domain">{{ icon('globe', 16) }}<span><b>Recipient domain</b><small>{{ rcpt_domain }}</small></span></button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+
+    <details class="menu">
+      <summary class="btn">{{ icon('rules', 16) }} Rule {{ icon('chevron-down', 14) }}</summary>
+      <div class="panel wide">
+        <form method="post" action="/rules" class="stack" data-rule-form>
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="next" value="/messages/{{ m.id }}">
+          <input type="hidden" name="priority" value="100">
+          <label class="field">Applies to
+            <select name="scope">
+              <option value="{{ m.rcpt_to }}" selected>Only mail to {{ m.rcpt_to }}</option>
+              <option value="">All recipients (global)</option>
+            </select>
+          </label>
+          <div class="grid-2">
+            <label class="field">When
+              <select name="field" id="qr-field">
+                <option value="sender" data-v="{{ m.mail_from }}" selected>Sender</option>
+                <option value="subject" data-v="{{ m.subject }}">Subject</option>
+                <option value="body" data-v="">Body</option>
+                <option value="any" data-v="">Any header or body</option>
+              </select>
+            </label>
+            <label class="field">Operator
+              <select name="op"><option value="contains">contains</option><option value="equals">equals</option><option value="startswith">starts with</option><option value="endswith">ends with</option><option value="regex">matches regex</option></select>
+            </label>
+          </div>
+          <input name="value" id="qr-value" value="{{ m.mail_from }}" placeholder="Text to match" required>
+          <label class="field">Then
+            <select name="action"><option value="flag">Flag</option><option value="delete">Delete</option><option value="forward">Forward</option></select>
+          </label>
+          <div data-forward hidden><input type="email" name="action_arg" placeholder="Forward to address"></div>
+          <button class="btn primary">Add rule</button>
+          <a class="link" href="/rules" style="text-align:center">Manage all rules</a>
+        </form>
+      </div>
+    </details>
+
+    <form method="post" action="/messages/{{ m.id }}/action">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn danger" name="action" value="delete" data-confirm="Delete this message?">{{ icon('trash', 16) }} Delete</button>
+    </form>
+  </div>
+</header>
+
+<div class="split">
+  <div>
+    <section class="card flush">
+      <div class="msg-meta">
+        <span class="avatar lg" style="--h: {{ (m.from_header or m.mail_from)|hue }}">{{ (m.from_header or m.mail_from)|initials }}</span>
+        <div class="grow">
+          <div><b>{{ (m.from_header or m.mail_from)|sname }}</b> <span class="muted">&lt;{{ (m.from_header or m.mail_from)|saddr or m.mail_from or 'no sender' }}&gt;</span></div>
+          <div class="muted">to {{ m.rcpt_to }}</div>
+        </div>
+      </div>
+      {% if view.html and view.has_remote %}
+      <div class="banner" id="ext-banner">
+        {{ icon('shield-check', 18) }}
+        <span class="grow">Remote images and styles are blocked to protect your privacy.</span>
+        <button class="btn sm" id="load-ext" type="button">{{ icon('eye', 15) }} Load external resources</button>
+      </div>
+      {% endif %}
+      <iframe id="body-frame" class="frame" title="Message body" sandbox="allow-popups allow-popups-to-escape-sandbox" src="/messages/{{ m.id }}/body"></iframe>
+    </section>
+
+    {% if view.attachments %}
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('paperclip', 18) }}</span><h2>Attachments ({{ view.attachments|length }})</h2></div>
+      <div class="card-body">
+        {% for a in view.attachments %}
+        <div class="attach">
+          {{ icon('paperclip', 18) }}
+          <div class="grow"><b class="ellipsis" style="display:block">{{ a.filename }}</b><span class="muted">{{ a.type }} · {{ a.size|size }}</span></div>
+          <a class="btn sm" href="/messages/{{ m.id }}/attachment/{{ a.idx }}">{{ icon('download', 15) }} Download</a>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <details class="plain">
+        <summary>Plain text version</summary>
+        <pre>{{ view.text or '(empty)' }}</pre>
+      </details>
+    </section>
+  </div>
+
+  <aside>
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('shield-check', 18) }}</span><h2>Authentication</h2></div>
+      <div class="card-body checks">
+        {% for k in ('spf', 'dkim', 'dmarc') %}
+        {% set v = m[k] %}
+        <div class="check">
+          <span class="name">{{ k|upper }}</span>
+          <span class="badge {{ 'success' if v == 'pass' else ('danger' if v in ('fail', 'softfail') else ('warn' if v in ('temperror', 'permerror') else '')) }}">{{ v }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('mail', 18) }}</span><h2>Details</h2></div>
+      <div class="card-body">
+        <dl class="kv" style="margin:0">
+          <dt>Envelope from</dt><dd class="mono">{{ m.mail_from or '(empty)' }}</dd>
+          <dt>Envelope to</dt><dd class="mono">{{ m.rcpt_to }}</dd>
+          <dt>Client IP</dt><dd class="mono">{{ m.remote_ip or '—' }}</dd>
+          {% for name, value in view.headers %}
+          {% if name in ('Cc', 'Reply-To', 'Date', 'Message-ID') %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endif %}
+          {% endfor %}
+        </dl>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><span class="ico">{{ icon('corner-up-right', 18) }}</span><h2>Forward</h2></div>
+      <div class="card-body">
+        {% if forward_ok %}
+        <form method="post" action="/messages/{{ m.id }}/forward" class="stack">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="email" name="to" placeholder="name@example.com" required>
+          <button class="btn primary">{{ icon('send', 16) }} Forward message</button>
+          <p class="hint">Sent from your configured SMTP account with the original attached as .eml.</p>
+        </form>
+        {% else %}
+        <p class="muted">No forwarding SMTP account is configured.{% if user.is_admin %} <a class="link" href="/settings">Set one up</a>.{% endif %}</p>
+        {% endif %}
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script>
+  const qrField = document.getElementById('qr-field'), qrValue = document.getElementById('qr-value');
+  qrField.addEventListener('change', () => { qrValue.value = qrField.selectedOptions[0].dataset.v || ''; qrValue.focus(); });
+  const loadExt = document.getElementById('load-ext');
+  if (loadExt) loadExt.addEventListener('click', () => {
+    document.getElementById('body-frame').src = '/messages/{{ m.id }}/body?external=1';
+    document.getElementById('ext-banner').innerHTML = '<span class="grow">External resources loaded for this view.</span>';
+  });
+</script>
+{% endblock %}

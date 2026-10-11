@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}Trashmail{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="{{ 'shell' if user else 'bare' }}">
+  {% if user %}
+  <aside class="sidebar">
+    <a class="brand" href="/">
+      {% include "logo.html" %}
+      <div><strong>Trashmail</strong><span>{{ domains or 'all domains' }}</span></div>
+    </a>
+    <nav>
+      <div class="nav-label">Mail</div>
+      <a class="nav-item {{ 'active' if nav == 'inbox' }}" href="/">{{ icon('inbox') }}<span>Inbox</span>{% if unread_count %}<em class="count">{{ unread_count }}</em>{% endif %}</a>
+      <div class="nav-label">Automation</div>
+      <a class="nav-item {{ 'active' if nav == 'rules' }}" href="/rules">{{ icon('rules') }}<span>Rules</span></a>
+      {% if user.is_admin %}
+      <a class="nav-item {{ 'active' if nav == 'blacklist' }}" href="/blacklist">{{ icon('ban') }}<span>Blacklist</span></a>
+      <div class="nav-label">Administration</div>
+      <a class="nav-item {{ 'active' if nav == 'users' }}" href="/users">{{ icon('users') }}<span>Users</span></a>
+      <a class="nav-item {{ 'active' if nav == 'settings' }}" href="/settings">{{ icon('settings') }}<span>Settings</span></a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-foot">
+      <a href="/account" class="avatar sm" style="--h: {{ user.username|hue }}" title="Your account">{{ (user.name or user.username)|initials }}</a>
+      <a href="/account" class="who">
+        <b class="ellipsis">{{ user.name or user.username }}</b>
+        <span>{{ 'Administrator' if user.is_admin else 'User' }}</span>
+      </a>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn ghost icon sm" title="Log out" aria-label="Log out">{{ icon('log-out', 16) }}</button>
+      </form>
+    </div>
+  </aside>
+  {% endif %}
+  <main class="main">
+    <div class="container">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+{% if ok or err %}
+<div class="toasts">
+  {% if ok %}<div class="toast ok">{{ icon('check', 18) }}<span>{{ ok }}</span><button aria-label="Dismiss">{{ icon('x', 16) }}</button></div>{% endif %}
+  {% if err %}<div class="toast err">{{ icon('alert', 18) }}<span>{{ err }}</span><button aria-label="Dismiss">{{ icon('x', 16) }}</button></div>{% endif %}
+</div>
+{% endif %}
+<script src="/static/app.js" defer></script>
+</body>
+</html>
