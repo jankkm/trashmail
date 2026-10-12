@@ -17,6 +17,9 @@
       {% include "logo.html" %}
       <div><strong>Trashmail</strong><span>{{ domains or 'all domains' }}</span></div>
     </a>
+    <a class="quick {{ 'active' if nav == 'inbox' }}" href="/" aria-label="Inbox">{{ icon('inbox', 20) }}{% if unread_count %}<em class="count">{{ unread_count }}</em>{% endif %}</a>
+    <a class="quick {{ 'active' if nav == 'favorites' }}" href="/favorites" aria-label="Favorites">{{ icon('star', 20) }}</a>
+    <button type="button" class="btn ghost icon burger" data-nav-toggle aria-label="Menu" aria-expanded="false">{{ icon('menu', 20) }}</button>
     <nav>
       <div class="nav-label">Mail</div>
       <a class="nav-item {{ 'active' if nav == 'inbox' }}" href="/">{{ icon('inbox') }}<span>Inbox</span>{% if unread_count %}<em class="count">{{ unread_count }}</em>{% endif %}</a>

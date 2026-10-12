@@ -20,6 +20,14 @@
   });
   $$('dialog[data-autoopen]').forEach((d) => d.showModal());
 
+  // mobile burger menu
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-nav-toggle]');
+    if (!t) return;
+    const open = t.closest('.sidebar').classList.toggle('open');
+    t.setAttribute('aria-expanded', String(open));
+  });
+
   // toasts
   $$('.toast').forEach((t) => {
     const hide = () => { t.classList.add('out'); setTimeout(() => t.remove(), 300); };
