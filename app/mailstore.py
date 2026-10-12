@@ -248,7 +248,10 @@ def tags_for(message_ids: list[int]) -> dict[int, list[str]]:
 
 
 def all_tags() -> list[sqlite3.Row]:
-    return db.query("SELECT tag, COUNT(*) AS c FROM message_tags GROUP BY tag ORDER BY tag COLLATE NOCASE")
+    """Tags of live messages with their counts."""
+    return db.query(
+        "SELECT t.tag, COUNT(*) AS c FROM message_tags t JOIN messages m ON m.id = t.message_id "
+        "WHERE m.deleted_ts IS NULL GROUP BY t.tag ORDER BY t.tag COLLATE NOCASE")
 
 
 # --------------------------------------------------------------------------- #
@@ -268,8 +271,10 @@ def _fts_query(q: str) -> str:
 
 
 def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None, tag: str = "",
-                  flagged: bool = False, unread: bool = False, limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
-    where, args = [], []
+                  flagged: bool = False, unread: bool = False, trashed: bool = False,
+                  limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
+    """Live messages, or with `trashed=True` the recycle bin (most recently deleted first)."""
+    where, args = [f"m.deleted_ts IS {'NOT ' if trashed else ''}NULL"], []
     if q.strip():
         fts = _fts_query(q)
         if not fts:
@@ -291,11 +296,12 @@ def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None
         where.append("m.flagged = 1")
     if unread:
         where.append("m.is_read = 0")
-    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    clause = "WHERE " + " AND ".join(where)
     try:
         total = db.one(f"SELECT COUNT(*) AS c FROM messages m {clause}", args)["c"]
         rows = db.query(
-            f"SELECT m.* FROM messages m {clause} ORDER BY m.received_ts DESC, m.id DESC LIMIT ? OFFSET ?",
+            f"SELECT m.* FROM messages m {clause} ORDER BY {'m.deleted_ts DESC,' if trashed else ''}"
+            " m.received_ts DESC, m.id DESC LIMIT ? OFFSET ?",
             [*args, limit, offset],
         )
     except sqlite3.OperationalError:  # malformed FTS expression
@@ -304,14 +310,16 @@ def list_messages(*, q: str = "", rcpt: str = "", rcpts: list[str] | None = None
 
 
 def recipients() -> list[sqlite3.Row]:
-    return db.query("SELECT rcpt_to, COUNT(*) AS c FROM messages GROUP BY rcpt_to ORDER BY c DESC LIMIT 300")
+    return db.query("SELECT rcpt_to, COUNT(*) AS c FROM messages WHERE deleted_ts IS NULL "
+        "GROUP BY rcpt_to ORDER BY c DESC LIMIT 300")
 
 
 def stats() -> dict:
     day = int(time.time()) - 86400
     row = db.one(
-        "SELECT COUNT(*) AS total, SUM(is_read=0) AS unread, SUM(flagged=1) AS flagged,"
-        " SUM(received_ts>=?) AS today FROM messages", (day,))
+        "SELECT SUM(deleted_ts IS NULL) AS total, SUM(deleted_ts IS NULL AND is_read=0) AS unread,"
+        " SUM(deleted_ts IS NULL AND flagged=1) AS flagged, SUM(deleted_ts IS NULL AND received_ts>=?) AS today"
+        " FROM messages", (day,))
     return {k: row[k] or 0 for k in ("total", "unread", "flagged", "today")}
 
 
@@ -320,7 +328,7 @@ def hourly_histogram() -> list[dict]:
     now = int(time.time())
     start = now - 24 * 3600
     counts = [0] * 24
-    for r in db.query("SELECT received_ts FROM messages WHERE received_ts>=?", (start,)):
+    for r in db.query("SELECT received_ts FROM messages WHERE received_ts>=? AND deleted_ts IS NULL", (start,)):
         counts[min(23, (r["received_ts"] - start) // 3600)] += 1
     peak = max(counts) or 1
     out = []
@@ -340,7 +348,22 @@ def set_read(ids: list[int], value: bool) -> None:
         conn.executemany("UPDATE messages SET is_read=? WHERE id=?", [(1 if value else 0, i) for i in ids])
 
 
+def trash(ids: list[int]) -> int:
+    """Move live messages to the recycle bin. Files, tags and index stay; returns how many moved."""
+    now = int(time.time())
+    with db.tx() as conn:
+        return sum(conn.execute("UPDATE messages SET deleted_ts=? WHERE id=? AND deleted_ts IS NULL",
+                                (now, i)).rowcount for i in ids)
+
+
+def restore(ids: list[int]) -> int:
+    with db.tx() as conn:
+        return sum(conn.execute("UPDATE messages SET deleted_ts=NULL WHERE id=? AND deleted_ts IS NOT NULL",
+                                (i,)).rowcount for i in ids)
+
+
 def delete(ids: list[int]) -> int:
+    """Remove messages for good (row, index entry and .eml file), whether live or in the recycle bin."""
     count = 0
     for mid in ids:
         row = get(mid)
@@ -364,8 +387,30 @@ def purge_expired() -> int:
         return 0
     cutoff = int(time.time()) - days * 86400
     ids = [r["id"] for r in db.query(
-        "SELECT id FROM messages WHERE received_ts < ? AND flagged = 0", (cutoff,))]
+        "SELECT id FROM messages WHERE received_ts < ? AND flagged = 0 AND deleted_ts IS NULL", (cutoff,))]
     return delete(ids)
+
+
+def empty_trash() -> int:
+    return delete([r["id"] for r in db.query("SELECT id FROM messages WHERE deleted_ts IS NOT NULL")])
+
+
+def purge_trash() -> int:
+    """Permanently remove messages that have been in the recycle bin longer than TRASH_DAYS."""
+    days = config.get_int("TRASH_DAYS")
+    if days <= 0:
+        return 0
+    cutoff = int(time.time()) - days * 86400
+    return delete([r["id"] for r in db.query(
+        "SELECT id FROM messages WHERE deleted_ts IS NOT NULL AND deleted_ts < ?", (cutoff,))])
+
+
+def trash_expiry(row) -> int | None:
+    """Timestamp at which a recycle-bin message is removed automatically, or None if never."""
+    days = config.get_int("TRASH_DAYS")
+    if row["deleted_ts"] is None or days <= 0:
+        return None
+    return row["deleted_ts"] + days * 86400
 
 
 # --------------------------------------------------------------------------- #

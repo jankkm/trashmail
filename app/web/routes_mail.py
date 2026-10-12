@@ -8,7 +8,7 @@ from urllib.parse import urlencode, quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from .. import favorites, forwarder, mailstore, rules
+from .. import config, db, favorites, forwarder, mailstore, rules
 from .deps import admin_user, back, current_user, render, to_int, verify_csrf
 
 router = APIRouter()
@@ -47,10 +47,50 @@ def inbox(request: Request, q: str = "", rcpt: str = "", fav: str = "", tag: str
         now=datetime.now().strftime("%H:%M"), full_qs=urlencode({**base, "page": page}))
 
 
+@router.get("/trash", response_class=HTMLResponse)
+def trash(request: Request, q: str = "", fav: str = "", page: str = "1", user=Depends(current_user)):
+    page = max(to_int(page, 1), 1)
+    selected = next((f for f in favorites.list_favorites() if f["id"] == to_int(fav)), None)
+    rows, total = mailstore.list_messages(
+        q=q, rcpts=selected["addresses"] if selected else None, trashed=True,
+        limit=PER_PAGE, offset=(page - 1) * PER_PAGE)
+    search = urlencode({k: v for k, v in {"q": q, "fav": selected["id"] if selected else ""}.items() if v})
+    return render(
+        request, "trash.html", nav="trash", rows=rows, total=total, page=page, q=q, fav=selected,
+        pages=max(1, -(-total // PER_PAGE)), msg_tags=mailstore.tags_for([r["id"] for r in rows]),
+        days=config.get_int("TRASH_DAYS"),
+        in_trash=True, next_url="/trash" + (f"?{search}&page={page}" if search else f"?page={page}"),
+        pager_url="/trash?" + (search + "&" if search else ""),
+        empty_title="No messages match your search" if q else "The recycle bin is empty",
+        empty_text="Try a different search." if q else "Deleted messages are kept here until you restore or remove them.",
+        empty_link="/trash" if q or selected else "", empty_label="Show all")
+
+
+@router.post("/trash/bulk", dependencies=[Depends(verify_csrf)])
+def trash_bulk(action: str = Form(...), ids: list[int] = Form([]), next: str = Form("/trash"),
+               user=Depends(current_user)):
+    target = next if next.startswith("/") and not next.startswith("//") else "/trash"
+    if not ids:
+        return back(target, err="Nothing selected")
+    if action == "restore":
+        return back(target, ok=f"Restored {mailstore.restore(ids)} message(s)")
+    if action == "purge":
+        # only what is really in the bin: never a live message through this route
+        in_bin = [r["id"] for r in db.query(
+            f"SELECT id FROM messages WHERE deleted_ts IS NOT NULL AND id IN ({','.join('?' * len(ids))})", ids)]
+        return back(target, ok=f"Permanently deleted {mailstore.delete(in_bin)} message(s)")
+    return back(target, err="Unknown action")
+
+
+@router.post("/trash/empty", dependencies=[Depends(verify_csrf)])
+def trash_empty(user=Depends(current_user)):
+    return back("/trash", ok=f"Recycle bin emptied ({mailstore.empty_trash()} message(s) deleted)")
+
+
 @router.get("/messages/{mid}", response_class=HTMLResponse)
 def message(request: Request, mid: int, user=Depends(current_user)):
     row = _row_or_404(mid)
-    if not row["is_read"]:
+    if not row["is_read"] and row["deleted_ts"] is None:
         mailstore.set_read([mid], True)
     view = mailstore.build_view(mailstore.read_raw(row))
     prefill = ""
@@ -58,6 +98,7 @@ def message(request: Request, mid: int, user=Depends(current_user)):
                   forward_ok=forwarder.configured(), prefill=prefill,
                   sender_addr=row["mail_from"], sender_domain=row["mail_from"].rpartition("@")[2],
                   rcpt_domain=row["rcpt_to"].rpartition("@")[2],
+                  in_trash=row["deleted_ts"] is not None, expires=mailstore.trash_expiry(row),
                   tags=mailstore.tags_for([mid]).get(mid, []), all_tags=mailstore.all_tags(),
                   back_qs=request.query_params.get("from", ""))
 
@@ -127,10 +168,18 @@ async def forward(request: Request, mid: int, to: str = Form(""), mode: str = Fo
 
 @router.post("/messages/{mid}/action", dependencies=[Depends(verify_csrf)])
 def single_action(mid: int, action: str = Form(...), user=Depends(current_user)):
-    _row_or_404(mid)
+    row = _row_or_404(mid)
     if action == "delete":
+        mailstore.trash([mid])
+        return back("/", ok="Message moved to the recycle bin")
+    if action == "restore":
+        mailstore.restore([mid])
+        return back(f"/messages/{mid}", ok="Message restored")
+    if action == "purge":
+        if row["deleted_ts"] is None:
+            return back(f"/messages/{mid}", err="Move the message to the recycle bin first")
         mailstore.delete([mid])
-        return back("/", ok="Message deleted")
+        return back("/trash", ok="Message permanently deleted")
     if action in ("flag", "unflag"):
         mailstore.set_flag([mid], action == "flag")
     elif action in ("read", "unread"):
@@ -187,8 +236,8 @@ def bulk(action: str = Form(...), ids: list[int] = Form([]), next: str = Form("/
     if not ids:
         return back(target, err="Nothing selected")
     if action == "delete":
-        count = mailstore.delete(ids)
-        return back(target, ok=f"Deleted {count} message(s)")
+        count = mailstore.trash(ids)
+        return back(target, ok=f"Moved {count} message(s) to the recycle bin")
     if action == "tag":
         tags = mailstore.parse_tags(tag)
         if not tags:

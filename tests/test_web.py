@@ -3,7 +3,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from app import auth, mailstore
+from app import auth, config, mailstore
 from app.web.app import create_app
 from .conftest import SAMPLE
 
@@ -48,7 +48,7 @@ def test_inbox_message_flow(client):
     r = client.post(f"/messages/{mid}/action", data={"action": "flag", "csrf": token})
     assert r.status_code == 303 and mailstore.get(mid)["flagged"] == 1
     r = client.post("/messages/bulk", data={"action": "delete", "ids": [mid], "csrf": token})
-    assert mailstore.get(mid) is None
+    assert mailstore.get(mid)["deleted_ts"] is not None       # moved to the recycle bin, not gone
 
 
 def test_forward_without_smtp_shows_error(client):
@@ -404,3 +404,55 @@ def test_quick_button_follows_profile_mode_and_password_has_own_form(client, mon
     assert "err=" in r.headers["location"]
     r = client.post("/account/password", data={"csrf": token, "current": "adminpass1", "new_password": "newpassword1"})
     assert "ok=" in r.headers["location"] and auth.authenticate("admin", "newpassword1")
+
+
+def test_recycle_bin_flow(client):
+    token = login(client)
+    keep = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    gone = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    path = config.boot().data_dir / mailstore.get(gone)["path"]
+
+    # POST routes need CSRF
+    assert client.post("/trash/empty").status_code == 403
+    assert client.post("/trash/bulk", data={"action": "restore", "ids": [gone]}).status_code == 403
+
+    r = client.post(f"/messages/{gone}/action", data={"action": "delete", "csrf": token})
+    assert r.status_code == 303 and path.exists()
+    assert mailstore.list_messages()[1] == 1 and mailstore.list_messages(trashed=True)[1] == 1
+    assert "The recycle bin is empty" not in client.get("/trash").text
+    page = client.get(f"/messages/{gone}")
+    assert page.status_code == 200 and "in the recycle bin" in page.text and "Delete forever" in page.text
+
+    # a live message cannot be purged through the bin
+    client.post("/trash/bulk", data={"action": "purge", "ids": [keep], "csrf": token})
+    assert mailstore.get(keep) is not None
+    assert "err=" in client.post(f"/messages/{keep}/action", data={"action": "purge", "csrf": token}).headers["location"]
+
+    client.post("/trash/bulk", data={"action": "restore", "ids": [gone], "csrf": token})
+    assert mailstore.get(gone)["deleted_ts"] is None and mailstore.list_messages()[1] == 2
+
+    mailstore.trash([keep, gone])
+    client.post("/trash/bulk", data={"action": "purge", "ids": [gone], "csrf": token})
+    assert mailstore.get(gone) is None and not path.exists() and mailstore.get(keep) is not None
+    client.post("/trash/empty", data={"csrf": token})
+    assert mailstore.get(keep) is None and "The recycle bin is empty" in client.get("/trash").text
+
+
+def test_trash_days_setting_is_editable(client):
+    token = login(client)
+    assert config.get_int("TRASH_DAYS") == 30 and "Empty recycle bin after" in client.get("/settings").text
+    client.post("/settings", data={"TRASH_DAYS": "3", "csrf": token})
+    assert config.get_int("TRASH_DAYS") == 3
+
+
+def test_trash_filtered_by_favorite_and_no_sidebar_count(client):
+    from app import favorites
+    login(client)
+    fid = favorites.create("Shops", "bob@example.test", "")
+    mine = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    other = mailstore.store(SAMPLE.replace(b"Hello", b"Other"), mail_from="a@b.test", rcpt="zed@example.test")
+    mailstore.trash([mine, other])
+    page = client.get(f"/trash?fav={fid}").text
+    assert "of favorite" in page and f"/messages/{mine}" in page and f"/messages/{other}" not in page
+    assert f"/trash?fav={fid}" in client.get(f"/favorites/{fid}").text
+    assert 'class="count"' not in client.get("/").text.split("Recycle bin")[1].split("</a>")[0]

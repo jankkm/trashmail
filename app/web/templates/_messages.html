@@ -1,13 +1,19 @@
 {# Bulk-selectable message list. Expects: rows, csrf, next_url, page, pages, pager_url, empty_title, empty_text #}
-<form method="post" action="/messages/bulk" class="card flush" data-bulk>
+<form method="post" action="{{ '/trash/bulk' if in_trash else '/messages/bulk' }}" class="card flush" data-bulk>
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <input type="hidden" name="next" value="{{ next_url }}">
+  {% if not in_trash %}
   {# default button for the Enter key: pressing Enter in the tag field adds the tag, never "Flag" #}
   <button type="submit" name="action" value="tag" class="sr-only" tabindex="-1" aria-hidden="true">Add tag</button>
+  {% endif %}
   {% if rows %}
   <div class="bulkbar">
     <b><span data-count>0</span> selected</b>
     <span class="grow"></span>
+    {% if in_trash %}
+    <button class="btn sm" name="action" value="restore">{{ icon('refresh', 15) }} Restore</button>
+    <button class="btn sm danger" name="action" value="purge" data-confirm="Permanently delete the selected messages? This cannot be undone.">{{ icon('trash', 15) }} Delete forever</button>
+    {% else %}
     <button class="btn sm" name="action" value="flag">{{ icon('star', 15) }} Flag</button>
     <button class="btn sm" name="action" value="unflag">Unflag</button>
     <button class="btn sm" name="action" value="read">Mark read</button>
@@ -16,7 +22,8 @@
       <input name="tag" placeholder="Tag…" maxlength="32" aria-label="Tag name" list="all-tags">
       <button class="btn sm" name="action" value="tag" title="Add this tag to the selected messages">{{ icon('tag', 14) }} Add tag</button>
     </span>
-    <button class="btn sm danger" name="action" value="delete" data-confirm="Delete the selected messages?">{{ icon('trash', 15) }} Delete</button>
+    <button class="btn sm danger" name="action" value="delete" data-confirm="Move the selected messages to the recycle bin?">{{ icon('trash', 15) }} Delete</button>
+    {% endif %}
   </div>
   <div class="msg-head">
     <input type="checkbox" class="sel-all" aria-label="Select all">

@@ -142,6 +142,10 @@ SETTING_LIST: tuple[Setting, ...] = (
 
     Setting("RETENTION_DAYS", "30", "Delete mail after",
             "Unflagged mail older than this is deleted. 0 = keep forever.", "int", group="Storage"),
+    Setting("TRASH_DAYS", "30", "Empty recycle bin after",
+            "Deleted messages stay in the recycle bin for this many days, then are removed for good. "
+            "0 = keep until the bin is emptied by hand. They still count towards the storage cap.",
+            "int", group="Storage"),
     Setting("MAX_STORAGE_MB", "5120", "Storage cap",
             "When stored mail reaches this size new mail is refused with 452 until space is freed. "
             "0 = unlimited.", "int", group="Storage"),

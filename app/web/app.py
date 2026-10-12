@@ -22,6 +22,9 @@ async def _retention_loop() -> None:
             removed = await asyncio.to_thread(mailstore.purge_expired)
             if removed:
                 log.info("retention: removed %s messages", removed)
+            emptied = await asyncio.to_thread(mailstore.purge_trash)
+            if emptied:
+                log.info("recycle bin: removed %s messages", emptied)
         except Exception:
             log.exception("retention run failed")
         await asyncio.sleep(3600)

@@ -36,3 +36,13 @@ def test_create_update_delete_and_counts():
     assert favorites.get_favorite(fid) is None
     assert mailstore.list_messages()[1] == 3                       # emails and rules untouched
     assert len(rules.list_rules()) == 2
+
+
+def test_favorite_counts_trashed_mail_separately():
+    fid = favorites.create("Shops", "bob@example.test", "")
+    a = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="other@example.test")
+    mailstore.trash([a])
+    mine = next(f for f in favorites.list_favorites() if f["id"] == fid)
+    assert (mine["messages"], mine["trashed"]) == (1, 1)

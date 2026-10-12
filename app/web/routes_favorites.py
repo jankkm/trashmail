@@ -50,7 +50,7 @@ def favorite_page(request: Request, fid: int, q: str = "", unread: str = "", fla
     scoped = favorites.rules_for(fav["addresses"])
     everyone = [r for r in rules.list_rules() if not r["scope"]]
     stats = favorites.list_favorites()
-    mine = next((f for f in stats if f["id"] == fid), {"messages": 0, "unread": 0})
+    mine = next((f for f in stats if f["id"] == fid), {"messages": 0, "unread": 0, "trashed": 0})
     base = {k: v for k, v in {"q": q, "flagged": flagged or "", "unread": unread or ""}.items() if v}
     path = f"/favorites/{fid}"
     here = path + ("?" + urlencode({**base, "page": page}) if page > 1 or base else "")

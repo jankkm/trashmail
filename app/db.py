@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS messages (
     remote_ip TEXT NOT NULL DEFAULT '',
     spf TEXT NOT NULL DEFAULT 'none',
     dkim TEXT NOT NULL DEFAULT 'none',
-    dmarc TEXT NOT NULL DEFAULT 'none'
+    dmarc TEXT NOT NULL DEFAULT 'none',
+    deleted_ts INTEGER                -- NULL = live, else when it was moved to the recycle bin
 );
 CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(received_ts DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_rcpt ON messages(rcpt_to);
@@ -130,6 +131,7 @@ MIGRATIONS = [
     ("users", "default_view", "TEXT NOT NULL DEFAULT 'all'"),     # inbox start view: all|unread|flagged
     ("users", "forward_email", "TEXT NOT NULL DEFAULT ''"),       # personal address for one-click forwarding
     ("users", "forward_mode", "TEXT NOT NULL DEFAULT 'forward'"),  # what the quick button does: forward|redirect
+    ("messages", "deleted_ts", "INTEGER"),                        # recycle bin: NULL = live, else deletion time
 ]
 
 

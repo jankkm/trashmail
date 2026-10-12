@@ -21,6 +21,7 @@
       <div class="nav-label">Mail</div>
       <a class="nav-item {{ 'active' if nav == 'inbox' }}" href="/">{{ icon('inbox') }}<span>Inbox</span>{% if unread_count %}<em class="count">{{ unread_count }}</em>{% endif %}</a>
       <a class="nav-item {{ 'active' if nav == 'favorites' }}" href="/favorites">{{ icon('star') }}<span>Favorites</span></a>
+      <a class="nav-item {{ 'active' if nav == 'trash' }}" href="/trash">{{ icon('trash') }}<span>Recycle bin</span></a>
       <div class="nav-label">Automation</div>
       <a class="nav-item {{ 'active' if nav == 'rules' }}" href="/rules">{{ icon('rules') }}<span>Rules</span></a>
       {% if user.is_admin %}

@@ -84,8 +84,9 @@ def get_favorite(fid: int) -> dict | None:
 def list_favorites() -> list[dict]:
     """All favorites with message / unread / rule counts, sorted by name."""
     addresses = _addresses_by_favorite()
-    per_rcpt = {r["rcpt_to"]: (r["c"], r["u"] or 0) for r in db.query(
-        "SELECT rcpt_to, COUNT(*) AS c, SUM(is_read=0) AS u FROM messages GROUP BY rcpt_to")}
+    per_rcpt = {r["rcpt_to"]: (r["c"], r["u"] or 0, r["t"] or 0) for r in db.query(
+        "SELECT rcpt_to, SUM(deleted_ts IS NULL) AS c, SUM(deleted_ts IS NULL AND is_read=0) AS u,"
+        " SUM(deleted_ts IS NOT NULL) AS t FROM messages GROUP BY rcpt_to")}
     rule_counts = {r["scope"]: r["c"] for r in db.query(
         "SELECT lower(scope) AS scope, COUNT(*) AS c FROM rules WHERE scope IS NOT NULL GROUP BY lower(scope)")}
     result = []
@@ -93,8 +94,9 @@ def list_favorites() -> list[dict]:
         addrs = addresses.get(row["id"], [])
         result.append({
             **dict(row), "addresses": addrs,
-            "messages": sum(per_rcpt.get(a, (0, 0))[0] for a in addrs),
-            "unread": sum(per_rcpt.get(a, (0, 0))[1] for a in addrs),
+            "messages": sum(per_rcpt.get(a, (0, 0, 0))[0] for a in addrs),
+            "unread": sum(per_rcpt.get(a, (0, 0, 0))[1] for a in addrs),
+            "trashed": sum(per_rcpt.get(a, (0, 0, 0))[2] for a in addrs),
             "rules": sum(rule_counts.get(a, 0) for a in addrs),
         })
     return result

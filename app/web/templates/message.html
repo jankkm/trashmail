@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ m.subject or '(no subject)' }} · Trashmail{% endblock %}
 {% block content %}
-<a class="back" href="/" onclick="if (history.length > 1 && document.referrer.startsWith(location.origin)) { history.back(); return false; }">{{ icon('arrow-left', 16) }} Inbox</a>
+<a class="back" href="{{ '/trash' if in_trash else '/' }}" onclick="if (history.length > 1 && document.referrer.startsWith(location.origin)) { history.back(); return false; }">{{ icon('arrow-left', 16) }} {{ 'Recycle bin' if in_trash else 'Inbox' }}</a>
 
 <header class="page-header">
   <div class="grow">
@@ -74,12 +74,22 @@
       </div>
     </details>
 
-    <form method="post" action="/messages/{{ m.id }}/action">
+    <form method="post" action="/messages/{{ m.id }}/action" class="row" style="gap:8px">
       <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button class="btn danger" name="action" value="delete" data-confirm="Delete this message?">{{ icon('trash', 16) }} Delete</button>
+      {% if in_trash %}
+      <button class="btn" name="action" value="restore">{{ icon('refresh', 16) }} Restore</button>
+      <button class="btn danger" name="action" value="purge" data-confirm="Permanently delete this message? This cannot be undone.">{{ icon('trash', 16) }} Delete forever</button>
+      {% else %}
+      <button class="btn danger" name="action" value="delete" data-confirm="Move this message to the recycle bin?">{{ icon('trash', 16) }} Delete</button>
+      {% endif %}
     </form>
   </div>
 </header>
+
+{% if in_trash %}
+<div class="banner" style="border-radius:10px;margin-bottom:16px">{{ icon('trash', 16) }}
+  <span>This message is in the recycle bin{% if expires %} and will be deleted permanently on {{ expires|dt }}{% endif %}.</span></div>
+{% endif %}
 
 <div class="split">
   <div>

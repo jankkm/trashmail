@@ -22,6 +22,7 @@
     {% if f.notes %}<p class="fav-notes">{{ f.notes }}</p>{% endif %}
     <div class="fav-stats">
       <span>{{ icon('mail', 14) }} <b>{{ f.messages }}</b> email{{ '' if f.messages == 1 else 's' }}</span>
+      <span>{{ icon('trash', 14) }} <b>{{ f.trashed }}</b> in bin</span>
       <span>{{ icon('rules', 14) }} <b>{{ f.rules }}</b> rule{{ '' if f.rules == 1 else 's' }}</span>
     </div>
   </a>

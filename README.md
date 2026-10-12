@@ -25,6 +25,7 @@ It **never relays** mail: it only accepts messages for its own domains and store
 | Blacklist | Sender address, sender domain, recipient address, recipient domain. Rejected with `550` during the SMTP dialogue. Domains also match subdomains. |
 | Auth checks | SPF, DKIM, DMARC results shown as badges; optional reject on SPF fail |
 | Retention | Auto-delete after N days (flagged mail is kept) |
+| Recycle bin | Everything you delete (message page, bulk bar) goes to the bin first. Restore it, delete it for good, or empty the bin; the bin is emptied automatically after `TRASH_DAYS` days. |
 | Users | Login, per-user name/password/admin flag; admins add/edit/remove users |
 | Config | Everything via env (+ `_FILE` variants), persisted to SQLite, editable in the UI |
 
@@ -158,6 +159,7 @@ the DB has no value for them yet**. After that the database value always wins an
 | `MAX_CONNECTIONS` / `MAX_CONNECTIONS_PER_IP` | `50` / `5` | Concurrent connections; further ones get `421` and are closed |
 | `COMMAND_LIMIT` | `50` | Uses of any one SMTP command per session; the session is dropped beyond. Needs a restart |
 | `RETENTION_DAYS` | `30` | Delete unflagged mail older than N days |
+| `TRASH_DAYS` | `30` | Days a deleted message stays in the recycle bin before it is removed for good. `0` = until emptied by hand. Trashed mail still counts towards `MAX_STORAGE_MB` |
 | `MAX_STORAGE_MB` | `5120` | Storage cap. At the cap new mail is refused with `452` until space is freed |
 | `FORWARD_SMTP_HOST` / `_PORT` | – / `587` | Outbound SMTP account used for forwarding |
 | `FORWARD_SMTP_SECURITY` | `starttls` | `starttls`, `ssl` or `none` |
@@ -204,6 +206,12 @@ that are shown once. At sign-in the password is followed by a code (or a recover
   `CREATE TABLE IF NOT EXISTS` in `db.SCHEMA`. That never alters an existing table, so **when you add a
   column, also append it to `db.MIGRATIONS`** (applied by `db.init()` on every start). Data migrations live next to it: `_migrate_rules_v2` moved the old
   one-condition-one-action rules into `rule_conditions` / `rule_actions` (it is a no-op on new databases).
+* **Recycle bin**: deleting sets `messages.deleted_ts`; the row, tags, FTS entry and `.eml` stay. Every "live"
+  query (inbox, stats, recipients, tags, favorite counts, histogram) filters `deleted_ts IS NULL`, the bin page
+  uses `list_messages(trashed=True)`. `mailstore.delete()` is the *permanent* removal (bin purge, retention);
+  `mailstore.trash()` / `restore()` are the user-facing ones. The hourly task runs `purge_expired` (retention,
+  skips trashed mail, so deleting an old message never loses it early) and `purge_trash` (by `deleted_ts`;
+  flagged mail is not exempt). Mail dropped by a rule's `delete` action is never stored, so never in the bin.
 * **Per-recipient copies**: a mail to 3 local recipients is stored 3 times, so each copy can be
   flagged/deleted/ruled independently. Simple on purpose.
 * **Personal forwarding address**: users can save one under *Account* and choose whether the one-click
@@ -255,7 +263,7 @@ app/
     app.py           create_app(): wiring, lifespan, error + security headers
     deps.py          templates, filters, session/current_user/admin_user/verify_csrf, render(), back()
     routes_auth.py   /login /logout /account
-    routes_mail.py   / (inbox) /messages/*
+    routes_mail.py   / (inbox) /messages/* /trash (recycle bin)
     routes_favorites.py /favorites, /favorites/{id}
     ruleui.py        rule-editor form parsing/context shared by rules + favorite pages
     routes_admin.py  /rules /blacklist /users /settings
@@ -291,7 +299,7 @@ automatic dark mode.
   body, auth badges, details, attachments, forward, Block/Rule menus), favorites (cards) and a favorite
   page (emails + notes + rules side by side), rules (sentence-style cards + a dialog editor with dynamic
   condition/action rows, `static/app.js`),
-  blacklist, users (table + dialogs), settings (grouped rows with source badges and a sticky save bar).
+  recycle bin (same list as the inbox with Restore / Delete forever / Empty), blacklist, users (table + dialogs), settings (grouped rows with source badges and a sticky save bar).
 * UI language is English (strings live in the templates; there is no i18n layer yet).
 
 ## Testing
