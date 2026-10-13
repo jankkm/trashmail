@@ -174,12 +174,9 @@ label.field .hint, .hint { font-weight: 400; color: var(--muted); font-size: 12.
 .msg-row.unread::before { content: ""; position: absolute; left: 5px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--brand); }
 .msg-row .rcpt { justify-self: end; max-width: 100%; }
 .msg-row time { color: var(--muted); font-size: 12.5px; text-align: right; }
-.msg-row .when { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.msg-row .fwd { color: var(--faint); display: grid; place-items: center; opacity: 0; pointer-events: auto; padding: 2px; border-radius: 6px; }
-.msg-row:hover .fwd, .msg-row .fwd:focus-visible, .msg-row .fwd.busy { opacity: 1; }
-.msg-row .fwd:hover { color: var(--brand); }
-.fwd.busy, .btn.busy { opacity: .6; pointer-events: none; }
-@media (hover: none) { .msg-row .fwd { opacity: 1; } }
+.msg-row .when { display: flex; align-items: center; justify-content: flex-end; }
+.msg-main .preview { display: none; }
+.btn.busy { opacity: .6; pointer-events: none; }
 /* The whole row is one link: the .stretch anchor covers it, the visible content sits above it
    but lets clicks through, so clicking anywhere on the row (even on text) opens the message.
    Only the checkbox stays interactive. */
@@ -314,7 +311,6 @@ dialog::backdrop { background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px)
   .grid-2 { grid-template-columns: 1fr; }
 }
 
-
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
 .server-info { margin-bottom: 16px; }
@@ -384,6 +380,7 @@ dialog.wide { width: min(760px, calc(100vw - 32px)); }
 /* favorite page: narrower list, so the recipient moves next to the sender */
 .rcpt-inline { display: none; max-width: 200px; font-weight: 500; }
 .fav-split .rcpt-inline { display: inline-flex; }
+.fav-overview { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .fav-split .msg-row, .fav-split .msg-head { grid-template-columns: 20px 22px 36px minmax(0, 1fr) 78px; }
 .fav-split .msg-row .rcpt, .fav-split .msg-head > span:nth-child(5) { display: none; }
 
@@ -437,3 +434,51 @@ a.tag:hover { background: hsl(var(--h) 70% 50% / .24); }
 .choice input { margin-top: 3px; width: auto; }
 .choice b { display: block; font-weight: 600; }
 .choice small { display: block; color: var(--muted); font-size: 12.5px; }
+
+/* ---- inbox on phones: compact stats strip, filters behind a button, three-line message rows ---- */
+.filter-toggle { display: none; position: relative; padding: 0; width: 38px; flex: none; }
+.filter-toggle.active { color: var(--brand-ink); border-color: var(--brand); }
+.filter-toggle .count { position: absolute; top: -6px; right: -6px; font-style: normal; font-size: 11px; font-weight: 600; min-width: 18px;
+                        height: 18px; padding: 0 5px; border-radius: 999px; background: var(--brand); color: #fff; line-height: 18px; }
+.filter-more { display: contents; }
+@media (max-width: 820px) {
+  .page-header { margin-bottom: 14px; }
+  .page-header h1 { overflow-wrap: anywhere; }
+  .inbox-head { flex-wrap: nowrap; align-items: center; }
+  .inbox-head .actions { flex-wrap: nowrap; }
+  .page-header .btn-text, .page-header .desktop-only { display: none; }
+  .page-header .btn:has(.btn-text) { width: 38px; padding: 0; }
+
+  .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 14px; }
+  .overview > .stat { padding: 10px 14px; }
+  .overview .chart { display: none; }
+  .stat .label { font-size: 11.5px; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .stat .label .i { display: none; }
+  .stat .num { font-size: 20px; margin-top: 0; }
+
+  .toolbar { gap: 8px; }
+  .toolbar .input-icon { flex: 1 1 0; min-width: 0; }
+  .filter-toggle { display: inline-flex; }
+  .filter-more { display: none; flex-basis: 100%; flex-direction: column; gap: 8px; }
+  .toolbar.open .filter-more { display: flex; }
+  .toolbar select { width: 100%; max-width: none; min-width: 0; }
+  .toolbar .segmented { flex: 1 1 100%; }
+  .toolbar .segmented a { flex: 1; justify-content: center; }
+  .toolbar .search-btn { display: none; }
+
+  .msg-row, .fav-split .msg-row { grid-template-columns: 20px 32px minmax(0, 1fr); gap: 10px; padding: 0 12px; }
+  .msg-row .avatar { width: 32px; height: 32px; font-size: 12px; align-self: start; margin-top: 12px; }
+  .msg-row > input.sel { align-self: start; margin-top: 18px; }
+  .msg-row > .when { position: absolute; top: 10px; right: 12px; font-size: 12px; }
+  .msg-main { padding: 9px 0; }
+  .msg-main .from { padding-right: 76px; }
+  .msg-main .line .snip { display: none; }
+  .msg-main .preview { display: block; color: var(--faint); font-size: 13px; }
+  .fav-split .rcpt-inline { display: none; }
+
+  /* favorite page: five numbers as one wrapping line ("1 Emails  0 Unread …") instead of five columns */
+  .fav-overview { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 12px 16px; }
+  .fav-overview > div.stat { display: flex; flex-direction: row-reverse; align-items: baseline; gap: 6px; padding: 0; border: 0; }
+  .fav-overview .stat .label { font-size: 13px; overflow: visible; }
+  .fav-overview .stat .num { font-size: 17px; }
+}

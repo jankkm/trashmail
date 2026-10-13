@@ -456,3 +456,18 @@ def test_trash_filtered_by_favorite_and_no_sidebar_count(client):
     assert "of favorite" in page and f"/messages/{mine}" in page and f"/messages/{other}" not in page
     assert f"/trash?fav={fid}" in client.get(f"/favorites/{fid}").text
     assert 'class="count"' not in client.get("/").text.split("Recycle bin")[1].split("</a>")[0]
+
+
+def test_inbox_times_are_localized_in_browser_and_list_has_no_forward_button(client, monkeypatch):
+    from app import forwarder
+    token = login(client)
+    monkeypatch.setattr(forwarder, "configured", lambda: True)
+    client.post("/account", data={"csrf": token, "name": "A", "forward_email": "me@x.test"})
+    mid = mailstore.store(SAMPLE, mail_from="a@b.test", rcpt="bob@example.test")
+    ts = mailstore.get(mid)["received_ts"]
+    html = client.get("/").text
+    assert f'data-ts="{ts}" data-fmt="short"' in html                    # rewritten to local time by app.js
+    assert re.search(r'updated <time datetime="[^"]+" data-ts="\d+" data-fmt="hm">', html)
+    assert f'/messages/{mid}/forward' not in html and 'class="fwd"' not in html
+    assert "data-filter-toggle" in html and 'id="filter-more"' in html
+    assert re.search(r'data-ts="\d+" data-fmt="dt"', client.get(f"/messages/{mid}").text)

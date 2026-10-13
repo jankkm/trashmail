@@ -1,13 +1,14 @@
 """Shared web helpers: templates, session/auth dependencies, CSRF, redirects."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 import zlib
 from email.utils import parseaddr
@@ -19,11 +20,11 @@ BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 
 
-def _dt(ts) -> str:
+def _dt_text(ts) -> str:
     return datetime.fromtimestamp(int(ts)).strftime("%d.%m.%Y %H:%M")
 
 
-def _short(ts) -> str:
+def _short_text(ts) -> str:
     d = datetime.fromtimestamp(int(ts))
     now = datetime.now()
     if d.date() == now.date():
@@ -31,6 +32,24 @@ def _short(ts) -> str:
     if d.year == now.year:
         return d.strftime("%d.%m. %H:%M")
     return d.strftime("%d.%m.%Y")
+
+
+def _time(ts, fmt: str, text: str) -> Markup:
+    """<time> in server time; app.js rewrites it into the browser's local time zone (the server usually runs in UTC)."""
+    iso = datetime.fromtimestamp(int(ts), timezone.utc).isoformat()
+    return Markup('<time datetime="{}" data-ts="{}" data-fmt="{}">{}</time>').format(iso, int(ts), fmt, text)
+
+
+def _dt(ts) -> Markup:
+    return _time(ts, "dt", _dt_text(ts))
+
+
+def _short(ts) -> Markup:
+    return _time(ts, "short", _short_text(ts))
+
+
+def _hm(ts) -> Markup:
+    return _time(ts, "hm", datetime.fromtimestamp(int(ts)).strftime("%H:%M"))
 
 
 def _size(n) -> str:
@@ -71,7 +90,7 @@ def _taghue(tag) -> int:
     return zlib.crc32(str(tag).lower().encode()) % 360
 
 
-templates.env.filters.update({"dt": _dt, "short": _short, "size": _size, "sname": _sname,
+templates.env.filters.update({"dt": _dt, "short": _short, "hm": _hm, "size": _size, "sname": _sname,
                               "saddr": _saddr, "initials": _initials, "hue": _hue, "taghue": _taghue})
 templates.env.globals["icon"] = icon
 

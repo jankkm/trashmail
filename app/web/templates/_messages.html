@@ -31,7 +31,7 @@
   </div>
   {% for m in rows %}
   <div class="msg-row {{ 'unread' if not m.is_read }}">
-    <a class="stretch" href="/messages/{{ m.id }}" aria-label="Open: {{ m.subject or '(no subject)' }}" title="{{ m.received_ts|dt }}"></a>
+    <a class="stretch" href="/messages/{{ m.id }}" aria-label="Open: {{ m.subject or '(no subject)' }}" title="{{ m.received_ts|dt|striptags }}" data-ts-title="{{ m.received_ts }}" data-fmt="dt"></a>
     <input class="sel" type="checkbox" name="ids" value="{{ m.id }}" aria-label="Select">
     <button type="submit" class="star {{ 'on' if m.flagged }}" formaction="/messages/{{ m.id }}/star"
             aria-pressed="{{ 'true' if m.flagged else 'false' }}"
@@ -44,14 +44,11 @@
         <span class="badge rcpt-inline ellipsis">{{ m.rcpt_to }}</span>
         {% for t in msg_tags.get(m.id, [])[:3] %}<a class="tag" style="--h: {{ t|taghue }}" href="/?tag={{ t|urlencode }}">{{ t }}</a>{% endfor %}
         {% if msg_tags.get(m.id, [])|length > 3 %}<span class="tag more">+{{ msg_tags[m.id]|length - 3 }}</span>{% endif %}</div>
-      <div class="line ellipsis"><b>{{ m.subject or '(no subject)' }}</b>{% if m.snippet %} — {{ m.snippet }}{% endif %}</div>
+      <div class="line ellipsis"><b>{{ m.subject or '(no subject)' }}</b>{% if m.snippet %}<span class="snip"> — {{ m.snippet }}</span>{% endif %}</div>
+      {% if m.snippet %}<div class="preview ellipsis">{{ m.snippet }}</div>{% endif %}
     </div>
     <span class="rcpt"><span class="badge ellipsis" style="max-width:100%;display:block;line-height:20px">{{ m.rcpt_to }}</span></span>
-    <span class="when">
-      {% if forward_ok and user.forward_email %}<button type="submit" class="fwd" formaction="/messages/{{ m.id }}/forward" data-async-forward
-              title="{{ 'Redirect' if user.forward_mode == 'redirect' else 'Forward' }} to {{ user.forward_email }}" aria-label="{{ 'Redirect' if user.forward_mode == 'redirect' else 'Forward' }} to {{ user.forward_email }}">{{ icon('corner-up-right', 15) }}</button>{% endif %}
-      <time>{{ m.received_ts|short }}</time>
-    </span>
+    <span class="when">{{ m.received_ts|short }}</span>
   </div>
   {% endfor %}
   {% if pages > 1 %}

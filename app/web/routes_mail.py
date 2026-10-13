@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+import time
 from urllib.parse import urlencode, quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -44,7 +44,7 @@ def inbox(request: Request, q: str = "", rcpt: str = "", fav: str = "", tag: str
         favs=favs, view=view, default_view=default_view, msg_tags=mailstore.tags_for([r["id"] for r in rows]),
         all_tags=mailstore.all_tags(), recipients=mailstore.recipients(), stats=mailstore.stats(),
         histogram=mailstore.hourly_histogram(), base_qs=urlencode(base), qs_search=urlencode(search),
-        now=datetime.now().strftime("%H:%M"), full_qs=urlencode({**base, "page": page}))
+        now=int(time.time()), full_qs=urlencode({**base, "page": page}))
 
 
 @router.get("/trash", response_class=HTMLResponse)

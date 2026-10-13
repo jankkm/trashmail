@@ -333,8 +333,9 @@ def hourly_histogram() -> list[dict]:
     peak = max(counts) or 1
     out = []
     for i, c in enumerate(counts):
-        label = datetime.fromtimestamp(start + (i + 1) * 3600).strftime("%H:00")
-        out.append({"label": label, "count": c, "pct": round(100 * c / peak)})
+        ts = start + (i + 1) * 3600
+        label = datetime.fromtimestamp(ts).strftime("%H:00")
+        out.append({"ts": ts, "label": label, "count": c, "pct": round(100 * c / peak)})
     return out
 
 

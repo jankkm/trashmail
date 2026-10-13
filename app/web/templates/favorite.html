@@ -20,7 +20,7 @@
   </div>
 </header>
 
-<section class="card overview" style="grid-template-columns:repeat(5,minmax(0,1fr))">
+<section class="card overview fav-overview">
   <div class="stat"><div class="label">{{ icon('mail', 15) }} Emails</div><div class="num">{{ counts.messages }}</div></div>
   <div class="stat"><div class="label">{{ icon('eye', 15) }} Unread</div><div class="num">{{ counts.unread }}</div></div>
   <div class="stat"><div class="label">{{ icon('trash', 15) }} <a href="/trash?fav={{ fav.id }}" style="color:inherit" title="Show this favorite’s emails in the recycle bin">In recycle bin</a></div><div class="num">{{ counts.trashed }}</div></div>
