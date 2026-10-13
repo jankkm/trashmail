@@ -28,6 +28,31 @@
     t.setAttribute('aria-expanded', String(open));
   });
 
+  // times: the server renders its own zone (usually UTC); show them in the browser's local time
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmtTime = (ts, fmt) => {
+    const d = new Date(ts * 1000), now = new Date();
+    const hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    const dm = pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.';
+    if (fmt === 'hm') return hm;
+    if (fmt === 'hour') return pad(d.getHours()) + ':00';
+    if (fmt === 'short') {
+      if (d.toDateString() === now.toDateString()) return hm;
+      return d.getFullYear() === now.getFullYear() ? dm + ' ' + hm : dm + d.getFullYear();
+    }
+    return dm + d.getFullYear() + ' ' + hm;          // 'dt'
+  };
+  $$('[data-ts][data-fmt]').forEach((el) => { el.textContent = fmtTime(+el.dataset.ts, el.dataset.fmt); });
+  $$('[data-ts-title]').forEach((el) => { el.title = fmtTime(+el.dataset.tsTitle, el.dataset.fmt) + (el.dataset.titleSuffix || ''); });
+
+  // inbox filters on small screens: the dropdowns sit behind a button
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-filter-toggle]');
+    if (!t) return;
+    const open = t.closest('form').classList.toggle('open');
+    t.setAttribute('aria-expanded', String(open));
+  });
+
   // toasts
   $$('.toast').forEach((t) => {
     const hide = () => { t.classList.add('out'); setTimeout(() => t.remove(), 300); };

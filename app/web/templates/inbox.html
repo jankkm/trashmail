@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Inbox · Trashmail{% endblock %}
 {% block content %}
-<header class="page-header">
+<header class="page-header inbox-head">
   <div>
     <h1>Inbox</h1>
-    <p class="sub">{{ total }} {{ 'unread ' if view == 'unread' else ('flagged ' if view == 'flagged' else '') }}message{{ '' if total == 1 else 's' }}{% if q or rcpt or fav or tag %} match your filters{% endif %} · updated {{ now }}</p>
+    <p class="sub">{{ total }} {{ 'unread ' if view == 'unread' else ('flagged ' if view == 'flagged' else '') }}message{{ '' if total == 1 else 's' }}{% if q or rcpt or fav or tag %} match your filters{% endif %} · updated {{ now|hm }}</p>
   </div>
   <div class="actions">
     {% if view != default_view %}
-    <form method="post" action="/account/default-view">
+    <form method="post" action="/account/default-view" class="desktop-only">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="view" value="{{ view }}">
       <input type="hidden" name="next" value="/?{{ full_qs }}">
       <button class="btn" title="Open the inbox on this view every time">{{ icon('pin', 16) }} Make “{{ view|capitalize }}” my default</button>
     </form>
     {% elif view != 'all' %}
-    <span class="badge">{{ icon('pin', 12) }} Your default view</span>
+    <span class="badge desktop-only">{{ icon('pin', 12) }} Your default view</span>
     {% endif %}
-    <a class="btn" href="/?{{ full_qs }}">{{ icon('refresh', 16) }} Refresh</a>
+    <a class="btn" href="/?{{ full_qs }}" aria-label="Refresh">{{ icon('refresh', 16) }} <span class="btn-text">Refresh</span></a>
   </div>
 </header>
 
@@ -27,14 +27,18 @@
   <div class="chart">
     <div class="label muted" style="font-size:12.5px;font-weight:550">Activity, last 24 hours</div>
     <div class="hist">
-      {% for h in histogram %}<span class="{{ 'zero' if h.count == 0 }}" style="height:{{ [h.pct, 7]|max }}%" title="{{ h.label }} · {{ h.count }}"></span>{% endfor %}
+      {% for h in histogram %}<span class="{{ 'zero' if h.count == 0 }}" style="height:{{ [h.pct, 7]|max }}%" title="{{ h.label }} · {{ h.count }}" data-ts-title="{{ h.ts }}" data-fmt="hour" data-title-suffix=" · {{ h.count }}"></span>{% endfor %}
     </div>
-    <div class="axis"><span>{{ histogram[0].label }}</span><span>{{ histogram[12].label }}</span><span>now</span></div>
+    <div class="axis"><span data-ts="{{ histogram[0].ts }}" data-fmt="hour">{{ histogram[0].label }}</span><span data-ts="{{ histogram[12].ts }}" data-fmt="hour">{{ histogram[12].label }}</span><span>now</span></div>
   </div>
 </section>
 
+{% set nfilters = (1 if rcpt else 0) + (1 if fav else 0) + (1 if tag else 0) %}
 <form class="toolbar" method="get" action="/" id="filters">
-  <div class="input-icon">{{ icon('search', 16) }}<input type="search" name="q" value="{{ q }}" placeholder="Search subject, sender, recipient and text…"></div>
+  <div class="input-icon">{{ icon('search', 16) }}<input type="search" name="q" value="{{ q }}" placeholder="Search subject, sender, recipient and text…" enterkeyhint="search"></div>
+  <button type="button" class="btn filter-toggle {{ 'active' if nfilters }}" data-filter-toggle aria-expanded="false" aria-controls="filter-more"
+          aria-label="Filters">{{ icon('sliders', 16) }}{% if nfilters %}<em class="count">{{ nfilters }}</em>{% endif %}</button>
+  <div class="filter-more" id="filter-more">
   <select name="rcpt" onchange="this.form.submit()" aria-label="Recipient">
     <option value="">All recipients</option>
     {% for r in recipients %}<option value="{{ r.rcpt_to }}" {{ 'selected' if r.rcpt_to == rcpt }}>{{ r.rcpt_to }} ({{ r.c }})</option>{% endfor %}
@@ -51,6 +55,7 @@
     {% for t in all_tags %}<option value="{{ t.tag }}" {{ 'selected' if t.tag|lower == tag|lower }}>{{ t.tag }} ({{ t.c }})</option>{% endfor %}
   </select>
   {% endif %}
+  </div>
   {% set sep = qs_search ~ '&' if qs_search else '' %}
   <div class="segmented">
     <a href="/?{{ sep }}view=all" class="{{ 'on' if view == 'all' }}">All</a>
@@ -58,7 +63,7 @@
     <a href="/?{{ sep }}view=flagged" class="{{ 'on' if view == 'flagged' }}">Flagged</a>
   </div>
   <input type="hidden" name="view" value="{{ view }}">
-  <button class="btn primary">Search</button>
+  <button class="btn primary search-btn">Search</button>
   {% if q or rcpt or fav or tag or view != default_view %}<a class="btn ghost" href="/">Clear</a>{% endif %}
 </form>
 <datalist id="all-tags">{% for t in all_tags %}<option value="{{ t.tag }}">{% endfor %}</datalist>
